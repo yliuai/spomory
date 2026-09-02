@@ -10,8 +10,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+MemoryType = Literal["semantic", "episodic", "procedural"]
 
 
 def _new_id() -> str:
@@ -36,6 +39,9 @@ class Entity(BaseModel):
     type: str = Field(description="Entity type, e.g. person / organization / concept / event")
     attributes: dict[str, str] = Field(default_factory=dict)
     aliases: list[str] = Field(default_factory=list)
+    memory_type: MemoryType = Field(
+        default="semantic", description="For Epic 7 export classification (MIF/PAM-style)"
+    )
     provenance: list[Provenance] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
@@ -47,6 +53,9 @@ class Relation(BaseModel):
     predicate: str
     object_id: str
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    memory_type: MemoryType = Field(
+        default="semantic", description="For Epic 7 export classification (MIF/PAM-style)"
+    )
     provenance: list[Provenance] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)

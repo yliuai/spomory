@@ -1,0 +1,61 @@
+{
+  "@context": {
+    "@vocab": "https://schema.org/",
+    "memory": "https://memory-core.dev/schema/memory#",
+    "prov": "http://www.w3.org/ns/prov#"
+  },
+  "@type": "memory:MemoryPassport",
+  "exported_at": "2026-09-02T14:36:09.493518Z",
+  "subject_id": "user-demo-001",
+  "entities": [
+    {
+      "id": "97556568-6e15-4f7a-81c6-a200c6d25b24",
+      "name": "张三",
+      "type": "person",
+      "memory_type": "semantic",
+      "attributes": {},
+      "aliases": [
+        "Zhang San"
+      ],
+      "provenance": [
+        {
+          "source_id": "doc-2026-01-05",
+          "source_span": "张三在某公司工作。",
+          "extractor": "memory_core.graph.extract@0.1"
+        }
+      ],
+      "created_at": "2026-09-02T14:36:09.493262Z",
+      "updated_at": "2026-09-02T14:36:09.493385Z"
+    },
+    {
+      "id": "8edf7504-3355-4684-a59a-7a799cbda8e2",
+      "name": "某公司",
+      "type": "organization",
+      "memory_type": "semantic",
+      "attributes": {},
+      "aliases": [],
+      "provenance": [],
+      "created_at": "2026-09-02T14:36:09.493398Z",
+      "updated_at": "2026-09-02T14:36:09.493398Z"
+    }
+  ],
+  "relations": [
+    {
+      "id": "caa0e530-3d4f-4d8a-81be-a3f2beab180a",
+      "subject_id": "97556568-6e15-4f7a-81c6-a200c6d25b24",
+      "predicate": "任职于",
+      "object_id": "8edf7504-3355-4684-a59a-7a799cbda8e2",
+      "confidence": 0.95,
+      "memory_type": "semantic",
+      "provenance": [
+        {
+          "source_id": "doc-2026-01-05",
+          "source_span": "张三在某公司工作。",
+          "extractor": "memory_core.graph.extract@0.1"
+        }
+      ],
+      "created_at": "2026-09-02T14:36:09.493454Z",
+      "updated_at": "2026-09-02T14:36:09.493454Z"
+    }
+  ]
+}

@@ -2,8 +2,8 @@ import pytest
 
 pytest.importorskip("sentence_transformers")
 
-from memory_core.graph.models import Entity, Relation  # noqa: E402
-from memory_core.retrieval.query_match import match_query_to_triples  # noqa: E402
+from memory_core.graph.models import Entity, Relation
+from memory_core.retrieval.query_match import match_query_to_triples
 
 
 @pytest.fixture(autouse=True)
