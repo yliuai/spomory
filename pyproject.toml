@@ -27,6 +27,7 @@ cloud = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
     "stripe>=9.0",
+    "cryptography>=42",
 ]
 mcp = [
     "mcp>=2.0",
