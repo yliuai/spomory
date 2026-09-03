@@ -1,0 +1,71 @@
+import pytest
+
+from memory_core.graph.local_store import LocalGraphStore
+from memory_core.graph.models import Entity, Relation
+from memory_core.memory_manager.actions import ActionType, MemoryAction, apply_action
+
+
+def _store_with_one_relation(tmp_path):
+    store = LocalGraphStore(tmp_path / "g.sqlite3")
+    a, b = Entity(name="a", type="thing"), Entity(name="b", type="thing")
+    store.add_entities([a, b])
+    relation = Relation(subject_id=a.id, predicate="r", object_id=b.id)
+    store.add_relations([relation])
+    return store, a, b, relation
+
+
+def test_add_action_writes_relation(tmp_path):
+    store = LocalGraphStore(tmp_path / "g.sqlite3")
+    a, b = Entity(name="a", type="thing"), Entity(name="b", type="thing")
+    store.add_entities([a, b])
+    relation = Relation(subject_id=a.id, predicate="r", object_id=b.id)
+
+    apply_action(MemoryAction(ActionType.ADD, relation=relation), store)
+
+    assert len(store.all_relations()) == 1
+
+
+def test_update_action_modifies_relation(tmp_path):
+    store, _a, _b, relation = _store_with_one_relation(tmp_path)
+
+    apply_action(
+        MemoryAction(ActionType.UPDATE, target_id=relation.id, updates={"confidence": 0.42}),
+        store,
+    )
+
+    updated = next(r for r in store.all_relations() if r.id == relation.id)
+    assert updated.confidence == 0.42
+    assert len(store.all_relations()) == 1  # upsert, not a duplicate
+
+
+def test_delete_action_removes_relation_without_touching_entities(tmp_path):
+    store, a, b, relation = _store_with_one_relation(tmp_path)
+
+    apply_action(MemoryAction(ActionType.DELETE, target_id=relation.id), store)
+
+    assert store.all_relations() == []
+    assert store.get_entity(a.id) is not None
+    assert store.get_entity(b.id) is not None
+
+
+def test_delete_action_removes_entity(tmp_path):
+    store, a, _b, _relation = _store_with_one_relation(tmp_path)
+
+    apply_action(MemoryAction(ActionType.DELETE, target_id=a.id), store)
+
+    assert store.get_entity(a.id) is None
+    assert store.all_relations() == []  # cascades, per delete_entity's contract
+
+
+def test_noop_action_is_a_no_op(tmp_path):
+    store, _a, _b, _relation = _store_with_one_relation(tmp_path)
+
+    apply_action(MemoryAction(ActionType.NOOP), store)
+
+    assert len(store.all_relations()) == 1
+
+
+def test_add_without_relation_raises(tmp_path):
+    store = LocalGraphStore(tmp_path / "g.sqlite3")
+    with pytest.raises(ValueError):
+        apply_action(MemoryAction(ActionType.ADD), store)

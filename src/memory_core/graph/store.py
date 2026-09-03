@@ -52,6 +52,11 @@ class GraphStoreBase(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def delete_relation(self, relation_id: str) -> None:
+        """Physically remove a single relation without touching its endpoints."""
+        raise NotImplementedError
+
+    @abstractmethod
     def all_entities(self) -> list[Entity]:
         raise NotImplementedError
 

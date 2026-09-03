@@ -133,6 +133,14 @@ class LocalGraphStore(GraphStoreBase):
         if entity_id in self._graph:
             self._graph.remove_node(entity_id)
 
+    def delete_relation(self, relation_id: str) -> None:
+        self._conn.execute("DELETE FROM relations WHERE id = ?", (relation_id,))
+        self._conn.commit()
+        for u, v, key in list(self._graph.edges(keys=True)):
+            if key == relation_id:
+                self._graph.remove_edge(u, v, key=key)
+                break
+
     def all_entities(self) -> list[Entity]:
         return [data["entity"] for _, data in self._graph.nodes(data=True)]
 

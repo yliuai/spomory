@@ -57,6 +57,20 @@ def test_query_subgraph_and_delete(tmp_path):
     assert ids == {a.id, b.id}
     assert len(sub_relations) == 1
 
+
+def test_delete_relation_leaves_entities_intact(tmp_path):
+    store = LocalGraphStore(tmp_path / "graph.sqlite3")
+    a, b = Entity(name="a", type="thing"), Entity(name="b", type="thing")
+    store.add_entities([a, b])
+    relation = Relation(subject_id=a.id, predicate="knows", object_id=b.id)
+    store.add_relations([relation])
+
+    store.delete_relation(relation.id)
+
+    assert store.all_relations() == []
+    assert store.get_entity(a.id) is not None
+    assert store.get_entity(b.id) is not None
+
     store.delete_entity(b.id)
     assert store.get_entity(b.id) is None
     assert all(r.subject_id != b.id and r.object_id != b.id for r in store.all_relations())

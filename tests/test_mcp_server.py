@@ -4,9 +4,9 @@ import pytest
 
 pytest.importorskip("mcp")
 
-from memory_core.graph.local_store import LocalGraphStore  # noqa: E402
-from memory_core.mcp_server.server import build_server  # noqa: E402
-from tests.test_incremental import FakeLLMProvider  # noqa: E402
+from memory_core.graph.local_store import LocalGraphStore
+from memory_core.mcp_server.server import build_server
+from tests.test_incremental import FakeLLMProvider
 
 
 class FakeEmbeddingProvider:
