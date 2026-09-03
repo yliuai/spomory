@@ -29,7 +29,7 @@ cloud = [
     "stripe>=9.0",
 ]
 mcp = [
-    "mcp>=1.0",
+    "mcp>=2.0",
 ]
 dev = [
     "pytest>=8.0",

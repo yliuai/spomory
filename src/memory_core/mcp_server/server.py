@@ -8,7 +8,7 @@ configured (local by default, cloud once Epic 8.2 lands).
 
 from __future__ import annotations
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from memory_core.export.exporter import export_all
 from memory_core.graph.incremental import IncrementalIngestor
@@ -20,14 +20,14 @@ from memory_core.retrieval.query_match import match_query_to_triples
 from memory_core.retrieval.ranker import build_context
 
 
-def build_server(store: GraphStoreBase, llm: LLMProvider, embedder) -> FastMCP:
+def build_server(store: GraphStoreBase, llm: LLMProvider, embedder) -> MCPServer:
     """Wire the four memory tools up against a given store/llm/embedder.
 
     Kept as a factory function (rather than module-level globals) so tests
     can inject fakes and so Epic 8.2's cloud backend swap is a one-line change
     at the call site, not a rewrite of this module.
     """
-    mcp = FastMCP("memory-core")
+    mcp = MCPServer("memory-core")
     ingestor = IncrementalIngestor(store, llm)
 
     @mcp.tool()
@@ -84,7 +84,7 @@ def _subgraph_to_json(entities, relations) -> str:
     )
 
 
-def default_server() -> FastMCP:
+def default_server() -> MCPServer:
     """Build a server using the default local backend and env-configured providers."""
     from memory_core.llm.local_sentence_transformer import SentenceTransformerProvider
     from memory_core.llm.openai_compatible import OpenAICompatibleProvider
