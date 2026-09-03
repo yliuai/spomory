@@ -34,6 +34,27 @@ def exact_or_substring_match(predicted: str, gold: str) -> bool:
     return gold != "" and (gold in predicted or predicted == gold)
 
 
+def make_llm_judge_scorer(llm: LLMProvider) -> AnswerScorer:
+    """A looser scorer for free-text answers where wording legitimately
+    varies (e.g. "Psychology, counseling certification" vs "Counseling and
+    mental health fields" should both count as correct). Costs one extra
+    LLM call per QA pair, so it's opt-in rather than the default.
+    """
+
+    def judge(predicted: str, gold: str) -> bool:
+        if not gold.strip():
+            return False
+        prompt = (
+            "判断【模型答案】是否在语义上正确回答了问题、且与【标准答案】一致"
+            "（措辞不同但意思相同也算正确；模型答案说不知道/未提及则算错误）。"
+            f"只回答 YES 或 NO。\n标准答案：{gold}\n模型答案：{predicted}"
+        )
+        verdict = llm.generate(prompt).strip().upper()
+        return verdict.startswith("YES")
+
+    return judge
+
+
 @dataclass
 class CaseResult:
     question: str
@@ -73,7 +94,11 @@ def run_conversation(
 
     turn_source_ids: set[str] = set()
     for turn in conversation.turns:
-        ingestor.ingest(f"{turn.speaker}: {turn.text}", source_id=turn.turn_id)
+        # Prefixing the session date lets the extractor ground facts in time
+        # (e.g. "上周" -> an actual date) instead of dropping "when" entirely,
+        # which a bare "speaker: text" turn gives it no way to do.
+        date_prefix = f"[{turn.session_date}] " if turn.session_date else ""
+        ingestor.ingest(f"{date_prefix}{turn.speaker}: {turn.text}", source_id=turn.turn_id)
         turn_source_ids.add(turn.turn_id)
 
     result = ConversationResult(sample_id=conversation.sample_id)

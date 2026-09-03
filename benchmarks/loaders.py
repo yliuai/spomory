@@ -17,6 +17,7 @@ class DialogueTurn:
     turn_id: str  # e.g. "D1:3"
     speaker: str
     text: str
+    session_date: str = ""  # e.g. "1:56 pm on 8 May, 2023" — the session this turn is in
 
 
 @dataclass
@@ -52,10 +53,14 @@ def load_locomo(path: Path | None = None) -> list[Conversation]:
             key=lambda k: int(k.split("_")[1]),
         )
         for session_key in session_keys:
+            session_date = conv.get(f"{session_key}_date_time", "")
             for turn in conv[session_key]:
                 turns.append(
                     DialogueTurn(
-                        turn_id=turn["dia_id"], speaker=turn["speaker"], text=turn["text"]
+                        turn_id=turn["dia_id"],
+                        speaker=turn["speaker"],
+                        text=turn["text"],
+                        session_date=session_date,
                     )
                 )
 

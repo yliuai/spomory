@@ -40,7 +40,8 @@ def run_conversation_vector_baseline(
     store = LocalGraphStore(":memory:")
     ingestor = IncrementalIngestor(store, llm)
     for turn in conversation.turns:
-        ingestor.ingest(f"{turn.speaker}: {turn.text}", source_id=turn.turn_id)
+        date_prefix = f"[{turn.session_date}] " if turn.session_date else ""
+        ingestor.ingest(f"{date_prefix}{turn.speaker}: {turn.text}", source_id=turn.turn_id)
 
     result = ConversationResult(sample_id=conversation.sample_id)
     for qa in conversation.qa_pairs[:max_qa_pairs]:
