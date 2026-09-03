@@ -11,6 +11,7 @@ def _small_multilingual_model(monkeypatch):
     monkeypatch.setenv("EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")
 
 
+@pytest.mark.slow
 def test_recalls_correct_multi_hop_triple_for_paraphrased_query():
     from memory_core.llm.local_sentence_transformer import SentenceTransformerProvider
 

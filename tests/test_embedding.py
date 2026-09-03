@@ -13,6 +13,7 @@ def _small_multilingual_model(monkeypatch):
     monkeypatch.setenv("EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")
 
 
+@pytest.mark.slow
 def test_cross_lingual_similarity_higher_for_matching_meaning():
     from memory_core.llm.local_sentence_transformer import SentenceTransformerProvider
 
