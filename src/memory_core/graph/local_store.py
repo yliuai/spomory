@@ -40,7 +40,9 @@ class LocalGraphStore(GraphStoreBase):
 
     def __init__(self, db_path: str | Path = ":memory:") -> None:
         self.db_path = str(db_path)
-        self._conn = sqlite3.connect(self.db_path)
+        # check_same_thread=False: MCP tool calls run in a worker thread pool
+        # (anyio.to_thread), not the thread the store was constructed on.
+        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
         self._graph = nx.MultiDiGraph()

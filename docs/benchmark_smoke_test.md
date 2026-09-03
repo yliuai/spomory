@@ -11,15 +11,33 @@
 
 结果存档：[`benchmarks/results/locomo_subset_smoke.json`](../benchmarks/results/locomo_subset_smoke.json)
 
-## 结果
+## 结果（含 Epic 4.3 基线对比）
 
-| 指标 | 数值 |
-|---|---|
-| 数据集 | LoCoMo-10（`snap-research/locomo`），第 1 段对话，前 20 轮 |
-| 问答对 | 6 条（证据全部落在前 20 轮内的子集） |
-| Recall@10（证据轮次是否被检索召回） | 83%（5/6） |
-| Accuracy（最终生成答案是否命中） | 17%（1/6） |
-| 总耗时 | 211 秒（网络延迟主导，非计算耗时） |
+同一份数据（第 1 段对话前 20 轮、6 条问答对）、同一个抽取管道、同一个生成
+prompt，只有检索环节不同：本方案（`retrieval/query_match.py` → PPR 扩散 →
+`ranker.py`）对比一个去掉 PPR 扩散的纯向量检索基线
+（`benchmarks/baseline.py`，直接取 query→triple 相似度 top-K，不做图扩散
+——即典型向量库外挂检索的做法）。
+
+| 指标 | 本方案（HippoRAG式PPR） | 基线（纯向量检索，无PPR） |
+|---|---|---|
+| Recall@10（证据轮次召回） | 83%（5/6） | 67%（4/6） |
+| Accuracy（最终答案命中） | 17%（1/6） | 17%（1/6） |
+| 总耗时 | 211 秒 | 305 秒 |
+
+原始结果：
+[`locomo_subset_smoke.json`](../benchmarks/results/locomo_subset_smoke.json)（本方案）、
+[`locomo_subset_baseline.json`](../benchmarks/results/locomo_subset_baseline.json)（基线）。
+
+**样本量的诚实说明**：n=6 远不足以得出统计显著的结论——PPR 版本多召回的那
+1 条（"Caroline 的身份是什么"，基线漏检、本方案命中）在这个规模下完全可能
+是偶然。这里能诚实说的是：*方向上*和 HippoRAG 论文的主张一致（PPR 扩散能
+召回纯向量相似度检索不到的关联事实），但要真正验证需要跑满 Epic 4.1 要求的
+100+ 样本规模，而不是从这 6 条外推。accuracy 两者打平（都是 17%），说明
+生成阶段的问题（见下）是共享瓶颈，跟检索算法选择无关——这本身也是一个有用
+的诊断信号：如果只看 accuracy 一个数字，会误以为"PPR 没用"，但拆开
+recall 和 accuracy 两个指标看，才能看出 PPR 确实在检索层面起作用，
+真正拖累总体表现的是生成阶段的独立问题。
 
 ## 诚实的失败分析
 

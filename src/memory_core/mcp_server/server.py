@@ -18,14 +18,23 @@ from memory_core.llm.base import LLMProvider
 from memory_core.retrieval.ppr import personalized_pagerank, rank_entities
 from memory_core.retrieval.query_match import match_query_to_triples
 from memory_core.retrieval.ranker import build_context
+from memory_core.usage import UsageTracker
 
 
-def build_server(store: GraphStoreBase, llm: LLMProvider, embedder) -> MCPServer:
+def build_server(
+    store: GraphStoreBase,
+    llm: LLMProvider,
+    embedder,
+    usage_tracker: UsageTracker | None = None,
+    user_id: str = "local",
+) -> MCPServer:
     """Wire the four memory tools up against a given store/llm/embedder.
 
     Kept as a factory function (rather than module-level globals) so tests
     can inject fakes and so Epic 8.2's cloud backend swap is a one-line change
-    at the call site, not a rewrite of this module.
+    at the call site, not a rewrite of this module. `usage_tracker` is
+    optional (Epic 9.3) — when given, add_memory/search_memory calls are
+    logged for retention analysis.
     """
     mcp = MCPServer("memory-core")
     ingestor = IncrementalIngestor(store, llm)
@@ -33,6 +42,8 @@ def build_server(store: GraphStoreBase, llm: LLMProvider, embedder) -> MCPServer
     @mcp.tool()
     def add_memory(text: str, source_id: str = "mcp-session") -> str:
         """Extract facts from `text` and write them into the memory graph."""
+        if usage_tracker is not None:
+            usage_tracker.record_event(user_id, "add_memory")
         result = ingestor.ingest(text, source_id=source_id)
         return (
             f"新增实体 {result.new_entities} 个，合并已有实体 {result.merged_entities} 个，"
@@ -42,6 +53,8 @@ def build_server(store: GraphStoreBase, llm: LLMProvider, embedder) -> MCPServer
     @mcp.tool()
     def search_memory(query: str, top_k: int = 10) -> str:
         """Retrieve and assemble a natural-language context relevant to `query`."""
+        if usage_tracker is not None:
+            usage_tracker.record_event(user_id, "search_memory")
         entities = store.all_entities()
         relations = store.all_relations()
         entities_by_id = {e.id: e for e in entities}
@@ -92,4 +105,5 @@ def default_server() -> MCPServer:
     store = LocalGraphStore("memory_core.sqlite3")
     llm = OpenAICompatibleProvider()
     embedder = SentenceTransformerProvider()
-    return build_server(store, llm, embedder)
+    usage_tracker = UsageTracker("memory_core_usage.sqlite3")
+    return build_server(store, llm, embedder, usage_tracker=usage_tracker)

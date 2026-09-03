@@ -16,4 +16,5 @@ venv/
 benchmarks/results/*.json
 !benchmarks/results/.gitkeep
 !benchmarks/results/locomo_subset_smoke.json
+!benchmarks/results/locomo_subset_baseline.json
 benchmarks/data/
