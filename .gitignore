@@ -15,4 +15,5 @@ venv/
 .DS_Store
 benchmarks/results/*.json
 !benchmarks/results/.gitkeep
+!benchmarks/results/locomo_subset_smoke.json
 benchmarks/data/

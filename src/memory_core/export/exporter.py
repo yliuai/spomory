@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from memory_core.audit import AuditLog
 from memory_core.graph.store import GraphStoreBase
 
 from .schema import ExportedEntity, ExportedRelation, MemoryExport
@@ -32,8 +33,15 @@ class DeletionReceipt:
         return self.entities_remaining == 0 and self.relations_remaining == 0
 
 
-def delete_all(store: GraphStoreBase, subject_id: str) -> DeletionReceipt:
-    """Physically delete every entity (and, transitively, every relation touching one)."""
+def delete_all(
+    store: GraphStoreBase, subject_id: str, audit_log: AuditLog | None = None
+) -> DeletionReceipt:
+    """Physically delete every entity (and, transitively, every relation touching one).
+
+    If ``audit_log`` is given, the deletion is recorded there (Epic 10.3) —
+    a tamper-evident record that the deletion happened, kept separately
+    from the data that was actually removed.
+    """
     entities_before = store.all_entities()
     relations_before = len(store.all_relations())
 
@@ -43,10 +51,19 @@ def delete_all(store: GraphStoreBase, subject_id: str) -> DeletionReceipt:
     remaining_entities = store.all_entities()
     remaining_relations = store.all_relations()
 
-    return DeletionReceipt(
+    receipt = DeletionReceipt(
         subject_id=subject_id,
         entities_deleted=len(entities_before) - len(remaining_entities),
         relations_deleted=relations_before - len(remaining_relations),
         entities_remaining=len(remaining_entities),
         relations_remaining=len(remaining_relations),
     )
+
+    if audit_log is not None:
+        audit_log.record_deletion(
+            user_id=subject_id,
+            entities_deleted=receipt.entities_deleted,
+            relations_deleted=receipt.relations_deleted,
+        )
+
+    return receipt

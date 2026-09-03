@@ -1,0 +1,53 @@
+{
+  "dataset": "LoCoMo-10 (snap-research/locomo)",
+  "sample_id": "conv-26-subset20",
+  "n_turns_ingested": 20,
+  "n_qa_pairs": 6,
+  "recall_at_10": 0.8333333333333334,
+  "accuracy": 0.16666666666666666,
+  "elapsed_seconds": 211.3684380054474,
+  "cases": [
+    {
+      "question": "When did Caroline go to the LGBTQ support group?",
+      "gold": "7 May 2023",
+      "predicted": "未提及",
+      "evidence_hit": true,
+      "correct": false
+    },
+    {
+      "question": "When did Melanie paint a sunrise?",
+      "gold": "2022",
+      "predicted": "无法确定",
+      "evidence_hit": false,
+      "correct": false
+    },
+    {
+      "question": "What fields would Caroline be likely to pursue in her educaton?",
+      "gold": "Psychology, counseling certification",
+      "predicted": "Counseling and working in mental health.",
+      "evidence_hit": true,
+      "correct": false
+    },
+    {
+      "question": "What is Caroline's identity?",
+      "gold": "Transgender woman",
+      "predicted": "Caroline is a member of the LGBTQ+ community.",
+      "evidence_hit": true,
+      "correct": false
+    },
+    {
+      "question": "When did Melanie run a charity race?",
+      "gold": "The sunday before 25 May 2023",
+      "predicted": "未知",
+      "evidence_hit": true,
+      "correct": false
+    },
+    {
+      "question": "What did the charity race raise awareness for?",
+      "gold": "mental health",
+      "predicted": "mental health",
+      "evidence_hit": true,
+      "correct": true
+    }
+  ]
+}
