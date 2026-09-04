@@ -9,6 +9,7 @@ this module decoupled from whatever decides *which* action to take.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import Enum
 
 from memory_core.graph.models import Entity, Provenance, Relation
@@ -45,7 +46,10 @@ def apply_action(action: MemoryAction, store: GraphStoreBase) -> None:
         if action.target_id is None or action.updates is None:
             raise ValueError("UPDATE action requires `target_id` and `updates`")
         relation = _find_relation(store, action.target_id)
-        updated = relation.model_copy(update=action.updates)
+        # updated_at must actually change on an update, or a stale-but-corrected
+        # fact keeps reporting its original creation time forever.
+        updates_with_timestamp = {**action.updates, "updated_at": datetime.now(UTC)}
+        updated = relation.model_copy(update=updates_with_timestamp)
         store.add_relations([updated])
 
     elif action.action_type is ActionType.DELETE:

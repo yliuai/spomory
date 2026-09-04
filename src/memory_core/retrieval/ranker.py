@@ -10,7 +10,15 @@ def _relation_to_sentence(relation: Relation, entities_by_id: dict[str, Entity])
     obj = entities_by_id.get(relation.object_id)
     subject_name = subject.name if subject else relation.subject_id
     object_name = obj.name if obj else relation.object_id
-    return f"{subject_name}{relation.predicate}{object_name}。"
+    # created_at answers a different "when" than any date folded into the
+    # predicate during extraction (graph/extract.py's date-in-predicate
+    # trick captures "when the event happened"; this is "when the system
+    # recorded it") -- both are real timestamps on the model, but only the
+    # event date was ever making it into rendered context. Without this,
+    # "when did I mention X" was unanswerable no matter how good retrieval
+    # was, because the information never left the database.
+    recorded = relation.created_at.strftime("%Y-%m-%d")
+    return f"{subject_name}{relation.predicate}{object_name}（记录于{recorded}）。"
 
 
 def build_context(

@@ -1,5 +1,25 @@
+from datetime import UTC, datetime
+
 from memory_core.graph.models import Entity, Relation
 from memory_core.retrieval.ranker import build_context
+
+
+def test_build_context_surfaces_created_at_so_when_questions_are_answerable():
+    """Regression test for a real user-reported gap: search_memory's context
+    dropped Relation.created_at entirely, so even though every fact is
+    timestamped in the graph, there was no way for the LLM to answer
+    "when did I mention X" -- the timestamp never left the database.
+    """
+    a, b = Entity(name="用户", type="person"), Entity(name="某公司", type="organization")
+    entities_by_id = {a.id: a, b.id: b}
+    fixed_time = datetime(2026, 3, 14, 12, 0, tzinfo=UTC)
+    relation = Relation(
+        subject_id=a.id, predicate="在", object_id=b.id, created_at=fixed_time
+    )
+
+    context = build_context([relation], entities_by_id, [a.id, b.id], top_k=2)
+
+    assert "2026-03-14" in context
 
 
 def test_build_context_produces_readable_sentences_in_relevance_order():
@@ -16,8 +36,9 @@ def test_build_context_produces_readable_sentences_in_relevance_order():
     ranked_ids = [zhangsan.id, company.id, beijing.id]
     context = build_context(relations, entities_by_id, ranked_ids, top_k=20)
 
-    assert "张三任职于某公司。" in context
-    assert "张三居住在北京。" in context
+    assert "张三任职于某公司" in context
+    assert "张三居住在北京" in context
+    assert "（记录于" in context  # created_at surfaces so "when did I say X" is answerable
     # higher-ranked relation (touches company, rank 1) comes before the one
     # touching beijing (rank 2)
     assert context.index("任职于") < context.index("居住在")
@@ -32,4 +53,5 @@ def test_build_context_dedupes_and_ignores_out_of_scope_relations():
         Relation(subject_id=c.id, predicate="r", object_id=c.id),  # not in top_k
     ]
     context = build_context(relations, entities_by_id, ranked_entity_ids=[a.id, b.id], top_k=2)
-    assert context == "arb。"
+    assert context.startswith("arb")
+    assert context.count("arb") == 1  # deduped, not appearing twice

@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pytest
 
 from memory_core.graph.local_store import LocalGraphStore
@@ -36,6 +38,27 @@ def test_update_action_modifies_relation(tmp_path):
     updated = next(r for r in store.all_relations() if r.id == relation.id)
     assert updated.confidence == 0.42
     assert len(store.all_relations()) == 1  # upsert, not a duplicate
+
+
+def test_update_action_refreshes_updated_at_but_not_created_at(tmp_path):
+    store = LocalGraphStore(tmp_path / "g.sqlite3")
+    a, b = Entity(name="a", type="thing"), Entity(name="b", type="thing")
+    store.add_entities([a, b])
+    original_time = datetime(2020, 1, 1, tzinfo=UTC)
+    relation = Relation(
+        subject_id=a.id, predicate="r", object_id=b.id,
+        created_at=original_time, updated_at=original_time,
+    )
+    store.add_relations([relation])
+
+    apply_action(
+        MemoryAction(ActionType.UPDATE, target_id=relation.id, updates={"confidence": 0.9}),
+        store,
+    )
+
+    updated = next(r for r in store.all_relations() if r.id == relation.id)
+    assert updated.created_at == original_time  # when the fact was first recorded
+    assert updated.updated_at > original_time  # when it was last changed -- must move
 
 
 def test_delete_action_removes_relation_without_touching_entities(tmp_path):
