@@ -31,6 +31,20 @@ from trl import GRPOConfig, GRPOTrainer
 
 from .reward import Episode, compute_reward
 
+_NEGATIVE_MARKERS = ("不采纳", "不应该", "不建议", "拒绝", "NOOP", "否")
+_POSITIVE_MARKERS = ("采纳", "应该", "同意", "ADD", "是")
+
+
+def _completion_adopts_the_action(text: str) -> bool:
+    """Parse whether a completion says "yes, adopt this memory operation" or
+    "no, don't" — checked against the training prompts' closing question
+    ("是否应该采纳这个记忆操作？"). Negative markers are checked first since
+    e.g. "不应该采纳" contains the positive substring "应该采纳" too.
+    """
+    if any(marker in text for marker in _NEGATIVE_MARKERS):
+        return False
+    return any(marker in text for marker in _POSITIVE_MARKERS)
+
 
 @dataclass
 class TrainEpisodeRow:
@@ -48,18 +62,24 @@ def load_dataset(path: str | Path) -> Dataset:
 def _reward_fn(completions: list[str], **kwargs: object) -> list[float]:
     """TRL reward function signature: score each sampled completion.
 
-    Real reward computation needs to actually apply the completion's memory
-    action and check downstream QA correctness (this is what
-    `benchmarks/harness.py` does at eval time); here we read the
-    precomputed `qa_correct` label that was baked into the dataset row at
-    data-generation time, since GRPO training doesn't re-run the QA agent
-    for every sampled completion during rollout.
+    Each of GRPO's ``num_generations`` samples for the same prompt gets
+    scored on what THAT completion actually said, not a single value
+    repeated across the group — repeating a per-prompt constant here would
+    give every sample in a group identical reward, making GRPO's
+    within-group advantage (and hence the gradient) permanently zero
+    regardless of dataset size. Reward is 1 when the completion's own
+    adopt/reject decision matches whether adopting this candidate fact
+    actually helped downstream QA (the `qa_correct` label recorded when the
+    dataset was built): if the fact turned out useful, the model should
+    have said "adopt"; if not, it should have said "reject".
     """
     qa_correct_labels = kwargs.get("qa_correct", [False] * len(completions))
-    return [
-        compute_reward(Episode(episode_id=str(i), qa_correct=bool(correct)))
-        for i, correct in enumerate(qa_correct_labels)
-    ]
+    rewards = []
+    for completion, correct in zip(completions, qa_correct_labels, strict=True):
+        adopted = _completion_adopts_the_action(completion)
+        episode = Episode(episode_id="0", qa_correct=(adopted == bool(correct)))
+        rewards.append(compute_reward(episode))
+    return rewards
 
 
 def build_trainer(

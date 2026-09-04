@@ -51,55 +51,66 @@ class RuleBasedPolicy(MemoryPolicy):
 
 class TrainedPolicy(MemoryPolicy):
     """Wraps a GRPO-trained (base model + LoRA adapter) checkpoint from
-    ``train_grpo.py``. Parses the model's free-text decision into an
-    ``ActionType`` via a fixed keyword protocol the training prompts must
-    also use, since GRPO trains against exactly that reward signal.
+    ``train_grpo.py``.
+
+    The model was only ever trained on one binary question — "should this
+    candidate ADD be adopted?" (``train_grpo.py``'s
+    ``_completion_adopts_the_action`` reward parser) — so that's the only
+    thing this policy asks it at inference time too; the prompt here is
+    built to match the training prompt shape exactly (an earlier version of
+    this class asked a different, out-of-distribution "pick ADD/UPDATE/
+    DELETE/NOOP" question the model was never trained to answer). Given an
+    "adopt" answer, the structural ADD vs UPDATE vs NOOP decision reuses
+    ``RuleBasedPolicy``'s logic (write the fact correctly); the model's own
+    contribution is only the adopt/reject gate — it does not yet have a
+    trained way to choose DELETE.
     """
 
     def __init__(self, checkpoint_dir: str, base_model: str | None = None) -> None:
+        import torch
         from peft import AutoPeftModelForCausalLM
         from transformers import AutoTokenizer
 
-        self.model = AutoPeftModelForCausalLM.from_pretrained(checkpoint_dir)
+        # Without an explicit device_map, a 7B model loads (and runs
+        # generate()) entirely on CPU, ~10-100x slower than GPU. Match
+        # train_grpo.py's device placement so this is actually usable.
+        load_kwargs: dict[str, object] = {}
+        if torch.cuda.is_available():
+            load_kwargs["torch_dtype"] = torch.bfloat16
+            load_kwargs["device_map"] = "auto"
+        self.model = AutoPeftModelForCausalLM.from_pretrained(checkpoint_dir, **load_kwargs)
         self.tokenizer = AutoTokenizer.from_pretrained(checkpoint_dir)
 
-    def _render_prompt(self, candidate: Relation, existing: list[Relation]) -> str:
-        existing_text = "；".join(f"{r.predicate}->{r.object_id}" for r in existing) or "无"
-        return (
-            f"候选事实：{candidate.subject_id} {candidate.predicate} {candidate.object_id}。"
-            f"已有相关记忆：{existing_text}。"
-            "请从 ADD/UPDATE/DELETE/NOOP 中选择一个动作。"
-        )
+    def _render_prompt(self, candidate: Relation) -> str:
+        candidate_desc = f"({candidate.subject_id}, {candidate.predicate}, {candidate.object_id})"
+        return f"候选操作：ADD {candidate_desc}\n是否应该采纳这个记忆操作？"
 
     def decide(self, candidate: Relation, store: GraphStoreBase) -> MemoryAction:
-        existing = store.get_neighbors(candidate.subject_id)
-        prompt = self._render_prompt(candidate, existing)
+        from .train_grpo import _completion_adopts_the_action
 
-        inputs = self.tokenizer(prompt, return_tensors="pt")
-        output_ids = self.model.generate(**inputs, max_new_tokens=8)
+        prompt = self._render_prompt(candidate)
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+        output_ids = self.model.generate(**inputs, max_new_tokens=16)
         decision_text = self.tokenizer.decode(
             output_ids[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
         )
 
-        for action_type in ActionType:
-            if action_type.value in decision_text.upper():
-                if action_type is ActionType.ADD:
-                    return MemoryAction(ActionType.ADD, relation=candidate)
-                if action_type is ActionType.NOOP:
-                    return MemoryAction(ActionType.NOOP)
-                # UPDATE/DELETE need a target id the model text doesn't reliably
-                # contain yet (prompt format doesn't ask for one) — fall back to
-                # the most recent existing relation on the same subject/predicate.
-                same_predicate = [r for r in existing if r.predicate == candidate.predicate]
-                if not same_predicate:
-                    continue
-                target = same_predicate[0]
-                if action_type is ActionType.DELETE:
-                    return MemoryAction(ActionType.DELETE, target_id=target.id)
-                return MemoryAction(
-                    ActionType.UPDATE,
-                    target_id=target.id,
-                    updates={"object_id": candidate.object_id, "provenance": candidate.provenance},
-                )
+        if not _completion_adopts_the_action(decision_text):
+            return MemoryAction(ActionType.NOOP)
 
-        return MemoryAction(ActionType.NOOP)
+        existing = [
+            r
+            for r in store.get_neighbors(candidate.subject_id)
+            if r.subject_id == candidate.subject_id and r.predicate == candidate.predicate
+        ]
+        if not existing:
+            return MemoryAction(ActionType.ADD, relation=candidate)
+        same = next((r for r in existing if r.object_id == candidate.object_id), None)
+        if same is not None:
+            return MemoryAction(ActionType.NOOP)  # adopting a duplicate is a no-op either way
+        outdated = existing[0]
+        return MemoryAction(
+            ActionType.UPDATE,
+            target_id=outdated.id,
+            updates={"object_id": candidate.object_id, "provenance": candidate.provenance},
+        )
