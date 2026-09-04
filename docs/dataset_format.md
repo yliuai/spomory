@@ -43,17 +43,28 @@ python benchmarks/download_data.py
    按 (对话文本, 候选ADD操作描述, 该 turn 关联问答是否被答对) 的形状落盘
    成 JSONL 一行。
 
-## 实际产出：27 条真实标注样本，未达到建议的 ~150 条
+## 实际产出：140 条真实标注样本，基本达到建议的 ~150 条
 
-`benchmarks/data/memory_ops_train.jsonl`（16 条，LoCoMo conv-30 前40轮）+
-`benchmarks/data/memory_ops_train_conv3.jsonl`（11 条，LoCoMo conv-41 前70轮）
-+ 两者合并后的 `benchmarks/data/memory_ops_train_merged.jsonl`（27 条，
-Epic 3.4 训练实际用的是这个文件）——全部是真实 LLM 调用生成的真实数据，
-不是占位/合成数据。
+对 LoCoMo-10 里 9 段不同对话（conv-30/41/42/43/44/47/48/49，每段取前
+40-100 轮）分别跑了一遍上面的生成流程，每段单独落盘成一个
+`memory_ops_train*.jsonl` 文件，再合并成
+`benchmarks/data/memory_ops_train_full.jsonl`（140 条，正类/负类分布
+85/55，比例合理）——Epic 3.4 最终训练用的是这个文件。全部是真实 LLM
+调用生成的真实数据，不是占位/合成数据；单段对话的产出率在 15-30%
+之间（不是每一轮对话都会被后续问答引用为证据），处理约 800 轮对话总共
+换来了 140 条可用样本。
 
-**没有达到 150 条的诚实原因**：不是每一轮对话都会被后续问答引用为证据
-——70 轮对话平均只产出约 11-16 条能配上"下游问答结果"标签的样本，产出率
-大概是 15-25%。要凑够 150 条，按这个产出率大约需要处理 700-1000 轮对话，
-在这台开发环境到 LLM API 的网络延迟下（单次调用 5-90 秒不等），预计需要
-再投入数小时的真实调用时间。`docs/memory_manager_eval.md` 记录了这个数据
-规模不足对 GRPO 训练实际造成的影响（组内奖励方差为 0，没有真实梯度）。
+历史记录（数据集是分批跑出来的，早期版本的训练结果和诊断见
+`docs/memory_manager_eval.md`）：
+
+| 文件 | 来源对话 | 条数 |
+|---|---|---|
+| `memory_ops_train.jsonl` | conv-30，前40轮 | 16 |
+| `memory_ops_train_conv3.jsonl` | conv-41，前70轮 | 11 |
+| `memory_ops_train_conv4.jsonl` | conv-42，前100轮 | 18 |
+| `memory_ops_train_conv5.jsonl` | conv-43，前100轮 | 25 |
+| `memory_ops_train_conv6.jsonl` | conv-44，前100轮 | 10 |
+| `memory_ops_train_conv7.jsonl` | conv-47，前100轮 | 16 |
+| `memory_ops_train_conv8.jsonl` | conv-48，前100轮 | 20 |
+| `memory_ops_train_conv9.jsonl` | conv-49，前100轮 | 24 |
+| **合计（`memory_ops_train_full.jsonl`）** | | **140** |
