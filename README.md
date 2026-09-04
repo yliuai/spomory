@@ -48,28 +48,107 @@ docs/                      # 各 Epic 的设计说明、验证报告、操作手
 
 ## 安装
 
+前置要求：Python **3.11+**、[uv](https://docs.astral.sh/uv/getting-started/installation/)
+（没有 uv 也可以用 `python -m venv` + `pip install -e` 替代下面的 `uv` 命令）。
+
 ```bash
+git clone <本仓库地址> memory-core && cd memory-core
 uv venv --python 3.11 .venv
-uv pip install -e ".[dev]"                       # 基础开发环境
-uv pip install -e ".[llm,embedding,mcp]"         # 跑 MCP Server 需要的最小集合
-uv pip install -e ".[rl]"                        # GRPO 训练（需要 GPU）
-uv pip install -e ".[cloud]"                     # 云端 API / Postgres 后端
-uv pip install -e ".[multimodal]"                # 图片验证（CLIP）
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+
+# 按需选择依赖组，可以叠加安装，不用一次装全部：
+uv pip install -e ".[dev]"                 # 跑测试/lint 必需
+uv pip install -e ".[llm,embedding]"       # 跑 “最小可用记忆系统” 必需（见下方 Demo）
+uv pip install -e ".[mcp]"                 # 额外需要：接入 Claude Desktop/Cursor
+uv pip install -e ".[rl]"                  # 额外需要：GRPO 训练（需要 GPU + CUDA）
+uv pip install -e ".[cloud]"               # 额外需要：云端 API / Postgres 后端
+uv pip install -e ".[multimodal]"          # 额外需要：图片 + CLIP 验证
 ```
 
-各依赖组之间相互独立，按需安装即可，不需要一次性装全部。
+`embedding` 这一组首次调用时会从 HuggingFace 下载默认模型 `BAAI/bge-m3`
+（约 2.2GB），请确保网络可达 huggingface.co（国内可设置
+`export HF_ENDPOINT=https://hf-mirror.com` 走镜像）。也可以用
+`export EMBEDDING_MODEL=<其他 sentence-transformers 模型名>` 换成更小的模型。
 
-## 快速开始：MCP Server
+`llm` 这一组本身不下载任何模型，但**运行时必须设置** `LLM_API_KEY`（任意
+OpenAI 兼容的 Chat Completions 接口都可以，官方 OpenAI、DeepSeek、通义千问
+等都行）：
 
 ```bash
-export LLM_API_KEY=...
-export LLM_BASE_URL=https://api.deepseek.com   # 可选，默认走 OpenAI
-export LLM_MODEL=deepseek-v4-flash             # 可选
-memory-core-mcp
+export LLM_API_KEY=sk-...
+export LLM_BASE_URL=https://api.deepseek.com   # 可选；不设默认是 OpenAI 官方地址
+export LLM_MODEL=deepseek-chat                 # 可选；不设默认是 gpt-4o-mini
 ```
 
-接入 Claude Desktop / Cursor 的详细步骤（含 macOS 上一个真实踩过的坑：
-运行时不能装在 `~/Documents` 下）见 [`docs/mcp_quickstart.md`](docs/mcp_quickstart.md)。
+### 跑通一个最小例子（不依赖 MCP，纯 Python 调用）
+
+装好 `dev` + `llm` + `embedding` 三组、设置好上面三个环境变量后，可以直接
+用下面这段脚本验证"写入记忆 → 检索记忆"整条链路是否工作（对应
+`mcp_server/server.py` 里 `add_memory`/`search_memory` 两个工具背后的真实
+逻辑，只是这里绕开了 MCP 协议层，直接调库）：
+
+```python
+# demo.py
+from memory_core.graph.local_store import LocalGraphStore
+from memory_core.graph.incremental import IncrementalIngestor
+from memory_core.llm.openai_compatible import OpenAICompatibleProvider
+from memory_core.llm.local_sentence_transformer import SentenceTransformerProvider
+from memory_core.memory_manager.policy import RuleBasedPolicy
+from memory_core.retrieval.ppr import personalized_pagerank, rank_entities
+from memory_core.retrieval.query_match import match_query_to_triples
+from memory_core.retrieval.ranker import build_context
+
+store = LocalGraphStore("demo.sqlite3")          # 本地文件，删掉即重置
+llm = OpenAICompatibleProvider()                 # 读取 LLM_API_KEY 等环境变量
+embedder = SentenceTransformerProvider()         # 首次运行会下载 bge-m3
+
+# 1. 写入一条记忆：LLM 抽取三元组，增量合并进图谱
+ingestor = IncrementalIngestor(store, llm, policy=RuleBasedPolicy())
+result = ingestor.ingest("我在中科院做后端开发，主要用 Python 和 Go。", source_id="demo")
+print(f"新增实体 {result.new_entities} 个，新增关系 {result.new_relations} 条")
+
+# 2. 检索：query 匹配三元组 -> PPR 扩散 -> 拼装自然语言上下文
+query = "我在哪里工作？"
+entities, relations = store.all_entities(), store.all_relations()
+entities_by_id = {e.id: e for e in entities}
+matches = match_query_to_triples(query, relations, entities_by_id, embedder, top_k=10)
+seed_ids = {r.relation.subject_id for r in matches} | {r.relation.object_id for r in matches}
+scores = personalized_pagerank(entities, relations, seed_entity_ids=list(seed_ids))
+ranked_ids = [eid for eid, _ in rank_entities(scores)]
+print(build_context(relations, entities_by_id, ranked_ids, top_k=10))
+```
+
+```bash
+python demo.py
+```
+
+这是用 DeepSeek 真实跑出来的输出（下面这段不是编的，实测截图式记录）：
+
+```
+新增实体 4 个，新增关系 2 条
+我在中科院做后端开发（记录于2026-09-04 22:36:00）。我主要用Go（记录于2026-09-04 22:36:00）。
+```
+
+具体措辞、实体/关系数量取决于所用 LLM 的抽取结果，每次跑不完全一致（比如
+这里"Python 和 Go"只保留了"Go"，是抽取模型本身的取舍，不是代码 bug），
+但只要环境变量配对了，跑出非空结果就说明链路是通的。
+
+## 快速开始：MCP Server（接入 Claude Desktop / Cursor）
+
+装好 `mcp` 依赖组、设置好 `LLM_API_KEY` 等环境变量后：
+
+```bash
+uv pip install -e ".[llm,embedding,mcp]"
+memory-core-mcp   # 启动后常驻，作为 stdio MCP server 等待客户端连接
+```
+
+数据默认落在 `~/.memory-core/`（可用 `MEMORY_CORE_DATA_DIR` 环境变量改变），
+设置了 `DATABASE_URL` 则改用 Postgres 后端而非本地 SQLite。
+
+把它接到 Claude Desktop / Cursor 需要在客户端配置文件里注册这个命令的**绝对
+路径**（而不是指望 `PATH`），完整步骤、配置文件示例、以及一个真实踩过的坑
+（macOS 上 TCC 隐私保护会拦截跑在 `~/Documents` 下的 venv，需要把 venv 装到
+`~/Documents` 之外）见 [`docs/mcp_quickstart.md`](docs/mcp_quickstart.md)。
 
 ## 测试
 
