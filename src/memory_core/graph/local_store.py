@@ -103,6 +103,16 @@ class LocalGraphStore(GraphStoreBase):
         )
         self._conn.commit()
         for relation in relations:
+            # An upsert can change a relation's endpoints (e.g. an UPDATE
+            # action retargets subject_id/object_id) -- networkx identifies
+            # edges by the (u, v, key) triple, so re-adding under the same
+            # key at new endpoints leaves the old (u, v, key) edge behind
+            # instead of replacing it. Drop any existing edge with this
+            # relation's id first, wherever it currently lives.
+            for u, v, key in list(self._graph.edges(keys=True)):
+                if key == relation.id and (u, v) != (relation.subject_id, relation.object_id):
+                    self._graph.remove_edge(u, v, key=key)
+                    break
             self._graph.add_edge(
                 relation.subject_id, relation.object_id, key=relation.id, relation=relation
             )

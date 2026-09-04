@@ -9,6 +9,15 @@ LLM（DeepSeek `deepseek-v4-flash`）+ 真实本地 embedding 模型，不是 mo
 轮，取证据完全落在这 150 轮内的全部 84 条问答对——这是目前跑过的最大规模
 真实评测，取代了此前只有 6 条样本的早期烟雾测试。
 
+**时序说明**：这次跑分用的 `IncrementalIngestor` 还没有接入 Epic 3 的
+`RuleBasedPolicy`（那个集成是在这次跑分*之后*才补上的，见
+`graph/incremental.py` 的 `policy` 参数和
+`tests/test_incremental_with_policy.py`）——当时是"无条件 ADD/合并"的旧
+写入逻辑。对这批 LoCoMo 数据的影响预计很小（一段对话内大部分是新事实，
+`RuleBasedPolicy` 面对新事实时本来也是判 ADD），但没有重新跑一遍来确认，
+如实标注这个时间差，而不是让读者误以为这份数字已经反映了 Epic 3 接入后的
+效果。
+
 原始结果：[`locomo_full_run.json`](../benchmarks/results/locomo_full_run.json)
 
 | 指标 | 数值 |

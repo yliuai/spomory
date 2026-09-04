@@ -15,6 +15,7 @@ from memory_core.graph.incremental import IncrementalIngestor
 from memory_core.graph.local_store import LocalGraphStore
 from memory_core.graph.store import GraphStoreBase
 from memory_core.llm.base import LLMProvider
+from memory_core.memory_manager.policy import RuleBasedPolicy
 from memory_core.retrieval.ppr import personalized_pagerank, rank_entities
 from memory_core.retrieval.query_match import match_query_to_triples
 from memory_core.retrieval.ranker import build_context
@@ -37,7 +38,7 @@ def build_server(
     logged for retention analysis.
     """
     mcp = MCPServer("memory-core")
-    ingestor = IncrementalIngestor(store, llm)
+    ingestor = IncrementalIngestor(store, llm, policy=RuleBasedPolicy())
 
     @mcp.tool()
     def add_memory(text: str, source_id: str = "mcp-session") -> str:

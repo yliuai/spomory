@@ -10,11 +10,15 @@ business plan, as opposed to GraphRAG's full-rebuild-per-update approach).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from memory_core.llm.base import LLMProvider
 
 from .models import Entity, Provenance, Relation
 from .store import GraphStoreBase
+
+if TYPE_CHECKING:
+    from memory_core.memory_manager.policy import MemoryPolicy
 
 
 @dataclass
@@ -22,6 +26,8 @@ class IngestResult:
     new_entities: int = 0
     merged_entities: int = 0
     new_relations: int = 0
+    updated_relations: int = 0
+    noop_relations: int = 0
     entity_ids_by_name: dict[str, str] = field(default_factory=dict)
 
 
@@ -37,16 +43,27 @@ class IncrementalIngestor:
     than a false merge that silently conflates two people/things.
     """
 
-    def __init__(self, store: GraphStoreBase, llm: LLMProvider) -> None:
+    def __init__(
+        self, store: GraphStoreBase, llm: LLMProvider, policy: MemoryPolicy | None = None
+    ) -> None:
+        """``policy`` (Epic 3.2/3.5): when given, every extracted candidate is
+        routed through ``policy.decide()`` (ADD/UPDATE/DELETE/NOOP) instead of
+        being unconditionally written — this is what actually wires Epic 3's
+        memory-management layer into the ingestion path Epic 1+2 use, rather
+        than leaving it a standalone, never-called module. Defaults to
+        ``None`` (unconditional add/merge) to keep existing callers'
+        behavior unchanged.
+        """
         self.store = store
         self.llm = llm
+        self.policy = policy
 
     def ingest(self, text: str, source_id: str) -> IngestResult:
         candidates = self.llm.extract_triples(text)
         result = IngestResult()
 
         new_entities: list[Entity] = []
-        new_relations: list[Relation] = []
+        pending_relations: list[Relation] = []
 
         def resolve(name: str) -> str:
             if name in result.entity_ids_by_name:
@@ -67,21 +84,44 @@ class IncrementalIngestor:
         for candidate in candidates:
             subject_id = resolve(candidate.subject)
             object_id = resolve(candidate.object)
-            new_relations.append(
-                Relation(
-                    subject_id=subject_id,
-                    predicate=candidate.predicate,
-                    object_id=object_id,
-                    provenance=[
-                        Provenance(source_id=source_id, source_span=candidate.source_span)
-                    ],
-                )
+            relation = Relation(
+                subject_id=subject_id,
+                predicate=candidate.predicate,
+                object_id=object_id,
+                provenance=[Provenance(source_id=source_id, source_span=candidate.source_span)],
             )
-            result.new_relations += 1
+
+            if self.policy is None:
+                pending_relations.append(relation)
+                result.new_relations += 1
+                continue
+
+            # New entities must be visible to the store before the policy can
+            # meaningfully query "what do we already know about this subject"
+            # (get_neighbors), so flush them immediately rather than batching.
+            if new_entities:
+                self.store.add_entities(new_entities)
+                new_entities = []
+            self._apply_via_policy(relation, result)
 
         if new_entities:
             self.store.add_entities(new_entities)
-        if new_relations:
-            self.store.add_relations(new_relations)
+        if pending_relations:
+            self.store.add_relations(pending_relations)
 
         return result
+
+    def _apply_via_policy(self, relation: Relation, result: IngestResult) -> None:
+        from memory_core.memory_manager.actions import ActionType, apply_action
+
+        action = self.policy.decide(relation, self.store)
+        apply_action(action, self.store)
+
+        if action.action_type is ActionType.ADD:
+            result.new_relations += 1
+        elif action.action_type is ActionType.UPDATE:
+            result.updated_relations += 1
+        elif action.action_type is ActionType.NOOP:
+            result.noop_relations += 1
+        # DELETE isn't reachable from RuleBasedPolicy's own candidate-vs-existing
+        # comparison today, but is handled uniformly by apply_action() either way.

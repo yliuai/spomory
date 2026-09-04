@@ -31,6 +31,23 @@ class GraphStoreContractTests:
         assert store.get_entity(entity.id).name == "b"
         assert len(store.all_entities()) == 1
 
+    def test_upsert_relation_retargeting_an_endpoint(self, store):
+        a, old, new = Entity(name="a", type="thing"), Entity(name="old", type="thing"), Entity(
+            name="new", type="thing"
+        )
+        store.add_entities([a, old, new])
+        relation = Relation(subject_id=a.id, predicate="r", object_id=old.id)
+        store.add_relations([relation])
+
+        retargeted = relation.model_copy(update={"object_id": new.id})
+        store.add_relations([retargeted])
+
+        all_relations = store.all_relations()
+        assert len(all_relations) == 1  # replaced in place, not appended
+        assert all_relations[0].object_id == new.id
+        assert store.get_neighbors(old.id) == []  # no stale edge left behind
+        assert len(store.get_neighbors(new.id)) == 1
+
     def test_find_entities_by_name_and_alias(self, store):
         entity = Entity(name="OpenAI", type="organization", aliases=["Open AI"])
         store.add_entities([entity])
