@@ -42,17 +42,54 @@ memory-core-mcp
 
 ## 接入 Claude Desktop / Cursor
 
+### ⚠️ macOS 上不要把运行时装在 `~/Documents`（或 Desktop/Downloads）下
+
+**真实踩过的坑**：如果 `command` 指向 `~/Documents/<project>/.venv/...`，
+Claude Desktop 启动 MCP Server 子进程时会报 `Server disconnected`，日志
+（`~/Library/Logs/Claude/mcp-server-<name>.log`）里能看到：
+
+```
+Fatal Python error: init_import_site: Failed to import the site module
+...
+PermissionError: [Errno 1] Operation not permitted: '.../.venv/pyvenv.cfg'
+```
+
+根因是 macOS 的 TCC（隐私保护）机制：`~/Documents`、`~/Desktop`、
+`~/Downloads` 这几个文件夹默认对没有被显式授权"完全磁盘访问权限"的
+App 及其子进程是保护起来的，Claude Desktop spawn 出的 MCP Server 进程
+拿不到这个授权，连 Python 启动时读自己 venv 目录下的 `pyvenv.cfg` 都会被
+拒绝——**这和代码本身、和项目仓库放哪里没关系，纯粹是这几个特殊文件夹
+的系统级限制**。
+
+**解决办法**：把 MCP Server 实际运行用的虚拟环境装在 `~/Documents`
+之外的普通目录（比如 `~/mcp-servers/`），用**非 editable**方式安装
+（这样运行时不需要再回头读项目仓库里的源码）：
+
+```bash
+mkdir -p ~/mcp-servers
+uv venv --python 3.11 ~/mcp-servers/memory-core-venv
+uv pip install "/path/to/memory-core[llm,embedding,mcp]" \
+    --python ~/mcp-servers/memory-core-venv/bin/python
+```
+
+项目仓库本身（源码开发）留在哪里都无所谓，只有**这个专门给 Claude
+Desktop 用的运行时副本**需要挪到 `~/Documents` 之外。以后改了代码想让
+Claude Desktop 用上最新版本，重新跑一遍上面这条 `uv pip install` 命令
+（不带 `-e`）覆盖安装即可。
+
+### 配置
+
 在 `claude_desktop_config.json`（macOS 路径：
 `~/Library/Application Support/Claude/claude_desktop_config.json`；
-Cursor 用它的等价 MCP 配置文件）里加一段。`command` 建议写虚拟环境里
-`memory-core-mcp` 的**绝对路径**——Claude Desktop 启动子进程时不一定继承你
-终端的 `PATH`，写绝对路径最不容易出问题：
+Cursor 用它的等价 MCP 配置文件）里加一段。`command` 写上面那个**非
+Documents 路径**虚拟环境里 `memory-core-mcp` 的绝对路径——Claude Desktop
+启动子进程时也不一定继承你终端的 `PATH`，绝对路径最不容易出问题：
 
 ```json
 {
   "mcpServers": {
     "memory-core": {
-      "command": "/path/to/memory-core/.venv/bin/memory-core-mcp",
+      "command": "/Users/<you>/mcp-servers/memory-core-venv/bin/memory-core-mcp",
       "env": {
         "LLM_API_KEY": "...",
         "LLM_BASE_URL": "https://api.deepseek.com",
@@ -63,10 +100,17 @@ Cursor 用它的等价 MCP 配置文件）里加一段。`command` 建议写虚�
 }
 ```
 
-把 `/path/to/memory-core` 换成你本机 clone/安装这个项目的实际路径（先跑过
-`uv venv --python 3.11 .venv && uv pip install -e ".[llm,embedding,mcp]"`，
-确保 `.venv/bin/memory-core-mcp` 这个文件存在）。改完配置后完全退出并重新
-打开 Claude Desktop 才会生效。
+如果这个 JSON 文件里已经有别的键（比如 Claude Desktop 自己的其他偏好
+设置），只在顶层加 `mcpServers` 这一个键，不要动其他内容——改之前建议
+先复制一份备份。改完配置后完全退出并重新打开 Claude Desktop 才会生效。
+
+### 数据文件存放位置
+
+本地 SQLite 数据文件（图谱数据 + 用量统计）默认存在 `~/.memory-core/`
+（`MEMORY_CORE_DATA_DIR` 环境变量可以改)——这也是特意选的一个不在
+Documents/Desktop/Downloads 下的普通目录，同样是为了避开上面那个 TCC
+限制，而不是依赖进程启动时的当前工作目录（GUI App 拉起子进程时的 cwd
+往往不可预测）。
 
 **验证步骤**（照着做一遍，10 分钟内应该能跑通）：
 
@@ -79,6 +123,10 @@ Cursor 用它的等价 MCP 配置文件）里加一段。`command` 建议写虚�
    工作"，确认能检索到第 2 步写入的内容。
 4. 如果想验证云端后端（Epic 8.2），把 `env` 里加一条 `DATABASE_URL`
    指向 Postgres，重启 Claude Desktop，重复第 2-3 步，确认行为一致。
+
+**排查方法**：如果 Claude Desktop 提示 "Server disconnected"，真实的报错
+（不是那句笼统的断连提示）在 `~/Library/Logs/Claude/mcp-server-memory-core.log`
+里——先看这个文件，上面那个 TCC 权限问题就是从这里诊断出来的。
 
 ## 验证状态
 

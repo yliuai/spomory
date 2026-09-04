@@ -8,6 +8,8 @@ configured (local by default, cloud once Epic 8.2 lands).
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from mcp.server.mcpserver import MCPServer
 
 from memory_core.export.exporter import export_all
@@ -98,6 +100,21 @@ def _subgraph_to_json(entities, relations) -> str:
     )
 
 
+def _data_dir() -> Path:
+    """Where the local SQLite files live. Deliberately an *absolute* path
+    under MEMORY_CORE_DATA_DIR (default ``~/.memory-core``), not a bare
+    relative filename — a GUI app spawning this as a subprocess (e.g.
+    Claude Desktop) may launch it with an unpredictable/unwritable working
+    directory, so a relative path silently creates the db wherever that
+    happened to be (or fails outright, e.g. under a sandboxed/TCC-protected
+    cwd like ~/Documents on macOS)."""
+    import os
+
+    path = Path(os.environ.get("MEMORY_CORE_DATA_DIR", Path.home() / ".memory-core"))
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def _select_store_from_env() -> GraphStoreBase:
     """Epic 8.2: DATABASE_URL set -> Postgres cloud backend; unset -> local SQLite.
 
@@ -111,7 +128,7 @@ def _select_store_from_env() -> GraphStoreBase:
         from memory_core.graph.postgres_store import PostgresGraphStore
 
         return PostgresGraphStore(database_url)
-    return LocalGraphStore("memory_core.sqlite3")
+    return LocalGraphStore(_data_dir() / "memory_core.sqlite3")
 
 
 def default_server() -> MCPServer:
@@ -122,5 +139,5 @@ def default_server() -> MCPServer:
     store = _select_store_from_env()
     llm = OpenAICompatibleProvider()
     embedder = SentenceTransformerProvider()
-    usage_tracker = UsageTracker("memory_core_usage.sqlite3")
+    usage_tracker = UsageTracker(_data_dir() / "memory_core_usage.sqlite3")
     return build_server(store, llm, embedder, usage_tracker=usage_tracker)
