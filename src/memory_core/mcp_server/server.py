@@ -97,12 +97,28 @@ def _subgraph_to_json(entities, relations) -> str:
     )
 
 
+def _select_store_from_env() -> GraphStoreBase:
+    """Epic 8.2: DATABASE_URL set -> Postgres cloud backend; unset -> local SQLite.
+
+    Factored out from ``default_server()`` so the branch is testable without
+    also needing a real LLM_API_KEY / downloading an embedding model.
+    """
+    import os
+
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url:
+        from memory_core.graph.postgres_store import PostgresGraphStore
+
+        return PostgresGraphStore(database_url)
+    return LocalGraphStore("memory_core.sqlite3")
+
+
 def default_server() -> MCPServer:
-    """Build a server using the default local backend and env-configured providers."""
+    """Build a server using env-configured providers and backend."""
     from memory_core.llm.local_sentence_transformer import SentenceTransformerProvider
     from memory_core.llm.openai_compatible import OpenAICompatibleProvider
 
-    store = LocalGraphStore("memory_core.sqlite3")
+    store = _select_store_from_env()
     llm = OpenAICompatibleProvider()
     embedder = SentenceTransformerProvider()
     usage_tracker = UsageTracker("memory_core_usage.sqlite3")
