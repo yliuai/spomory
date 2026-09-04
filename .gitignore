@@ -24,3 +24,8 @@ benchmarks/data/*
 !benchmarks/data/images
 !benchmarks/data/images/*.jpg
 !benchmarks/data/multimodal_ground_truth.json
+
+# internal working docs, not for the public repo
+TASKS.md
+AI个人记忆方案.docx
+AI个人记忆方案-v2.docx
