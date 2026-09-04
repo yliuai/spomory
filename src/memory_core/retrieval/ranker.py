@@ -17,7 +17,14 @@ def _relation_to_sentence(relation: Relation, entities_by_id: dict[str, Entity])
     # event date was ever making it into rendered context. Without this,
     # "when did I mention X" was unanswerable no matter how good retrieval
     # was, because the information never left the database.
-    recorded = relation.created_at.strftime("%Y-%m-%d")
+    #
+    # created_at is stored in UTC (models.py's _utcnow()); .astimezone()
+    # with no argument converts to the local system timezone before
+    # formatting, so what's shown matches the clock the user actually reads
+    # -- rendering the raw UTC value would be off by a fixed offset (e.g. 8
+    # hours for a China-local deployment) from what "when did I say this"
+    # intuitively expects.
+    recorded = relation.created_at.astimezone().strftime("%Y-%m-%d %H:%M:%S")
     return f"{subject_name}{relation.predicate}{object_name}（记录于{recorded}）。"
 
 

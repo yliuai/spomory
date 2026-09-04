@@ -9,17 +9,25 @@ def test_build_context_surfaces_created_at_so_when_questions_are_answerable():
     dropped Relation.created_at entirely, so even though every fact is
     timestamped in the graph, there was no way for the LLM to answer
     "when did I mention X" -- the timestamp never left the database.
+
+    Also covers the follow-up report that the rendered timestamp was
+    missing hour/minute/second granularity (date-only). Computes the
+    expected local-time string the same way the implementation does
+    (created_at is stored in UTC; .astimezone() converts for display)
+    rather than hardcoding a date, so this isn't tied to the machine's
+    timezone.
     """
     a, b = Entity(name="用户", type="person"), Entity(name="某公司", type="organization")
     entities_by_id = {a.id: a, b.id: b}
-    fixed_time = datetime(2026, 3, 14, 12, 0, tzinfo=UTC)
+    fixed_time = datetime(2026, 3, 14, 12, 34, 56, tzinfo=UTC)
     relation = Relation(
         subject_id=a.id, predicate="在", object_id=b.id, created_at=fixed_time
     )
 
     context = build_context([relation], entities_by_id, [a.id, b.id], top_k=2)
 
-    assert "2026-03-14" in context
+    expected = fixed_time.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    assert expected in context
 
 
 def test_build_context_produces_readable_sentences_in_relevance_order():
