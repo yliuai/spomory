@@ -15,6 +15,10 @@ SOURCES = {
     # snap-research/locomo: the official LoCoMo-10 release (10 long multi-session
     # conversations, ~2000 QA pairs total with evidence dialogue-id links).
     "locomo10.json": "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json",
+    # xiaowu0162/LongMemEval (ICLR 2025): the "oracle" variant pre-filters each
+    # question's haystack down to its relevant sessions (with has_answer flags),
+    # good for a harness run without also processing bulk distractor sessions.
+    "longmemeval_oracle.json": "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_oracle.json",
 }
 
 

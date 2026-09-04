@@ -68,17 +68,33 @@ def build_trainer(
     output_dir: str,
     lora_r: int = 16,
 ) -> GRPOTrainer:
+    import torch
+
     lora_config = LoraConfig(
         r=lora_r,
         lora_alpha=lora_r * 2,
         target_modules=["q_proj", "v_proj"],
         task_type="CAUSAL_LM",
     )
+    # device_map={"": 0}: force the whole model onto one GPU. Without it,
+    # transformers' big-model loading heuristics can offload some layers to
+    # a "meta" device, which then crashes backward() with a device mismatch
+    # between the LoRA gradient and the offloaded weight. Only applies when
+    # CUDA is actually available -- the CPU-only smoke test (tiny placeholder
+    # model, no GPU) needs the default (no device_map) behavior instead.
+    model_init_kwargs = {"torch_dtype": "bfloat16" if torch.cuda.is_available() else "float32"}
+    if torch.cuda.is_available():
+        # "auto": shard across every visible GPU (accelerate's dispatch) so a
+        # 7B model + on-policy generation buffers aren't squeezed onto one
+        # 24GB card. {"":0} above was simpler but OOM'd on a single GPU.
+        model_init_kwargs["device_map"] = "auto"
     grpo_config = GRPOConfig(
         output_dir=output_dir,
         num_generations=4,
         per_device_train_batch_size=4,
         max_completion_length=64,
+        model_init_kwargs=model_init_kwargs,
+        bf16=torch.cuda.is_available(),
     )
     return GRPOTrainer(
         model=base_model,

@@ -35,6 +35,54 @@ class Conversation:
     qa_pairs: list[QAPair]
 
 
+def load_longmemeval(path: Path | None = None, limit: int | None = None) -> list[Conversation]:
+    """Load LongMemEval's "oracle" variant (github.com/xiaowu0162/LongMemEval,
+    ICLR 2025): each question comes with its own pre-filtered set of relevant
+    sessions rather than sharing one long conversation the way LoCoMo does, so
+    each question is modeled as its own single-QA-pair ``Conversation``.
+    """
+    path = path or DATA_DIR / "longmemeval_oracle.json"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} not found — run `python benchmarks/download_data.py` first"
+        )
+
+    raw = json.loads(path.read_text())[:limit]
+    conversations: list[Conversation] = []
+    for sample in raw:
+        turns: list[DialogueTurn] = []
+        evidence_turn_ids: list[str] = []
+        for session_idx, session in enumerate(sample["haystack_sessions"]):
+            session_date = sample["haystack_dates"][session_idx]
+            session_id = sample["haystack_session_ids"][session_idx]
+            for turn_idx, turn in enumerate(session):
+                turn_id = f"{session_id}:{turn_idx}"
+                turns.append(
+                    DialogueTurn(
+                        turn_id=turn_id,
+                        speaker=turn["role"],
+                        text=turn["content"],
+                        session_date=session_date,
+                    )
+                )
+                if turn.get("has_answer"):
+                    evidence_turn_ids.append(turn_id)
+
+        qa_pairs = [
+            QAPair(
+                question=sample["question"],
+                answer=sample["answer"],
+                evidence_turn_ids=evidence_turn_ids,
+                category=None,
+            )
+        ]
+        conversations.append(
+            Conversation(sample_id=sample["question_id"], turns=turns, qa_pairs=qa_pairs)
+        )
+
+    return conversations
+
+
 def load_locomo(path: Path | None = None) -> list[Conversation]:
     """Load the LoCoMo-10 dataset (download it first via ``download_data.py``)."""
     path = path or DATA_DIR / "locomo10.json"

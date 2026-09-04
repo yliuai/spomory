@@ -17,4 +17,5 @@ benchmarks/results/*.json
 !benchmarks/results/.gitkeep
 !benchmarks/results/locomo_subset_smoke.json
 !benchmarks/results/locomo_subset_baseline.json
+!benchmarks/results/locomo_full_run.json
 benchmarks/data/
