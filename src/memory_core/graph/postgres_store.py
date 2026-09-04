@@ -1,18 +1,12 @@
 """Cloud backend for Epic 8.2: same `GraphStoreBase` contract as
 `LocalGraphStore`, backed by Postgres instead of SQLite + in-memory networkx.
 
-Scaffolding only — there is no Postgres instance available in this
-development environment to run it against, so unlike every other store in
-this codebase, this one has NOT been exercised against a real database.
-`tests/test_postgres_store.py` runs the exact same behavioral contract
-suite `LocalGraphStore` passes, but is skipped unless a `DATABASE_URL` env
-var points at a real Postgres. Treat this module as implementing the
-interface correctly by code review, not as verified.
+Verified against a real PostgreSQL 10 instance via
+`tests/test_postgres_store.py` (the same 8-test contract suite
+`LocalGraphStore` passes), gated on a `DATABASE_URL` env var.
 """
 
 from __future__ import annotations
-
-import json
 
 from .models import Entity, Relation
 from .store import GraphStoreBase
@@ -73,12 +67,13 @@ class PostgresGraphStore(GraphStoreBase):
         row = self._conn.execute(
             "SELECT data FROM entities WHERE id = %s", (entity_id,)
         ).fetchone()
-        return Entity(**json.loads(row[0])) if row else None
+        # psycopg3 auto-adapts a jsonb column to a Python dict on fetch.
+        return Entity(**row[0]) if row else None
 
     def find_entities_by_name(self, name: str) -> list[Entity]:
         target = _normalize(name)
         rows = self._conn.execute("SELECT data FROM entities").fetchall()
-        entities = [Entity(**json.loads(r[0])) for r in rows]
+        entities = [Entity(**r[0]) for r in rows]
         return [
             e
             for e in entities
@@ -90,7 +85,7 @@ class PostgresGraphStore(GraphStoreBase):
             "SELECT data FROM relations WHERE subject_id = %s OR object_id = %s",
             (entity_id, entity_id),
         ).fetchall()
-        return [Relation(**json.loads(r[0])) for r in rows]
+        return [Relation(**r[0]) for r in rows]
 
     def query_subgraph(
         self, entity_ids: list[str], hops: int = 1
@@ -135,8 +130,8 @@ class PostgresGraphStore(GraphStoreBase):
 
     def all_entities(self) -> list[Entity]:
         rows = self._conn.execute("SELECT data FROM entities").fetchall()
-        return [Entity(**json.loads(r[0])) for r in rows]
+        return [Entity(**r[0]) for r in rows]
 
     def all_relations(self) -> list[Relation]:
         rows = self._conn.execute("SELECT data FROM relations").fetchall()
-        return [Relation(**json.loads(r[0])) for r in rows]
+        return [Relation(**r[0]) for r in rows]

@@ -33,5 +33,7 @@ Phase 0 就冻结，Phase 2 向社区开放存储适配层时不需要推倒重�
 
 - `LocalGraphStore`（`graph/local_store.py`）：基于 `networkx` 内存图 +
   SQLite 持久化，Phase 0/Phase 1 本地默认后端。
-- 云端后端（Postgres + pgvector 或托管图数据库）计划在 Epic 8.2 补充，
-  接口不变。
+- `PostgresGraphStore`（`graph/postgres_store.py`，Epic 8.2）：接口不变，
+  已在真实 PostgreSQL 10 实例上跑通全部契约测试
+  （`tests/graph_store_contract.py`）和 MCP Server 功能对等性验证
+  （`tests/test_postgres_mcp_parity.py`），详见 `docs/postgres_setup.md`。
