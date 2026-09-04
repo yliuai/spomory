@@ -1,0 +1,278 @@
+{
+  "n_images": 10,
+  "n_candidates": 40,
+  "text_only_accuracy": 0.5,
+  "clip_verified_accuracy": 1.0,
+  "per_image": [
+    {
+      "filename": "picsum_237.jpg",
+      "candidates": [
+        "puppy sits on wooden floor",
+        "puppy is black labrador",
+        "dog wrapped in plaid blanket",
+        "dog sits on forest path"
+      ],
+      "labels": [
+        true,
+        true,
+        false,
+        false
+      ],
+      "clip_scores": [
+        0.27659058570861816,
+        0.30648401379585266,
+        0.21957452595233917,
+        0.24210037291049957
+      ],
+      "clip_predictions": [
+        true,
+        true,
+        false,
+        false
+      ]
+    },
+    {
+      "filename": "picsum_1025.jpg",
+      "candidates": [
+        "dog wrapped in plaid blanket",
+        "dog sits on forest path",
+        "lioness stares at camera",
+        "lioness has amber eyes"
+      ],
+      "labels": [
+        true,
+        true,
+        false,
+        false
+      ],
+      "clip_scores": [
+        0.30009710788726807,
+        0.2860049307346344,
+        0.20524267852306366,
+        0.18950816988945007
+      ],
+      "clip_predictions": [
+        true,
+        true,
+        false,
+        false
+      ]
+    },
+    {
+      "filename": "picsum_1074.jpg",
+      "candidates": [
+        "lioness stares at camera",
+        "lioness has amber eyes",
+        "walruses lie on beach",
+        "walrus has tusks"
+      ],
+      "labels": [
+        true,
+        true,
+        false,
+        false
+      ],
+      "clip_scores": [
+        0.33932003378868103,
+        0.3218073844909668,
+        0.17555557191371918,
+        0.21662300825119019
+      ],
+      "clip_predictions": [
+        true,
+        true,
+        false,
+        false
+      ]
+    },
+    {
+      "filename": "picsum_1084.jpg",
+      "candidates": [
+        "walruses lie on beach",
+        "walrus has tusks",
+        "strawberries are red",
+        "strawberries piled in containers"
+      ],
+      "labels": [
+        true,
+        true,
+        false,
+        false
+      ],
+      "clip_scores": [
+        0.33572158217430115,
+        0.3010917603969574,
+        0.1717643141746521,
+        0.11138889193534851
+      ],
+      "clip_predictions": [
+        true,
+        true,
+        false,
+        false
+      ]
+    },
+    {
+      "filename": "picsum_1080.jpg",
+      "candidates": [
+        "strawberries are red",
+        "strawberries piled in containers",
+        "jellyfish swims in blue water",
+        "jellyfish is orange"
+      ],
+      "labels": [
+        true,
+        true,
+        false,
+        false
+      ],
+      "clip_scores": [
+        0.2785411477088928,
+        0.28191205859184265,
+        0.09481614828109741,
+        0.14583656191825867
+      ],
+      "clip_predictions": [
+        true,
+        true,
+        false,
+        false
+      ]
+    },
+    {
+      "filename": "picsum_1069.jpg",
+      "candidates": [
+        "jellyfish swims in blue water",
+        "jellyfish is orange",
+        "cliffs overlook ocean",
+        "sea stacks rise from water"
+      ],
+      "labels": [
+        true,
+        true,
+        false,
+        false
+      ],
+      "clip_scores": [
+        0.29949772357940674,
+        0.336935430765152,
+        0.17385031282901764,
+        0.18780340254306793
+      ],
+      "clip_predictions": [
+        true,
+        true,
+        false,
+        false
+      ]
+    },
+    {
+      "filename": "picsum_1050.jpg",
+      "candidates": [
+        "cliffs overlook ocean",
+        "sea stacks rise from water",
+        "castle sits on hilltop",
+        "castle surrounded by forest"
+      ],
+      "labels": [
+        true,
+        true,
+        false,
+        false
+      ],
+      "clip_scores": [
+        0.2682855427265167,
+        0.26326099038124084,
+        0.1732546091079712,
+        0.1517702341079712
+      ],
+      "clip_predictions": [
+        true,
+        true,
+        false,
+        false
+      ]
+    },
+    {
+      "filename": "picsum_1040.jpg",
+      "candidates": [
+        "castle sits on hilltop",
+        "castle surrounded by forest",
+        "person stands in front of waterfall",
+        "rainbow appears over waterfall"
+      ],
+      "labels": [
+        true,
+        true,
+        false,
+        false
+      ],
+      "clip_scores": [
+        0.2679387331008911,
+        0.2777796983718872,
+        0.16885007917881012,
+        0.14676988124847412
+      ],
+      "clip_predictions": [
+        true,
+        true,
+        false,
+        false
+      ]
+    },
+    {
+      "filename": "picsum_1035.jpg",
+      "candidates": [
+        "person stands in front of waterfall",
+        "rainbow appears over waterfall",
+        "cliff overlooks fjord",
+        "people stand on cliff"
+      ],
+      "labels": [
+        true,
+        true,
+        false,
+        false
+      ],
+      "clip_scores": [
+        0.31009596586227417,
+        0.3172118663787842,
+        0.21203702688217163,
+        0.25491413474082947
+      ],
+      "clip_predictions": [
+        true,
+        true,
+        false,
+        false
+      ]
+    },
+    {
+      "filename": "picsum_1015.jpg",
+      "candidates": [
+        "cliff overlooks fjord",
+        "people stand on cliff",
+        "puppy sits on wooden floor",
+        "puppy is black labrador"
+      ],
+      "labels": [
+        true,
+        true,
+        false,
+        false
+      ],
+      "clip_scores": [
+        0.3028735816478729,
+        0.25077125430107117,
+        0.12390057742595673,
+        0.145212322473526
+      ],
+      "clip_predictions": [
+        true,
+        true,
+        false,
+        false
+      ]
+    }
+  ]
+}

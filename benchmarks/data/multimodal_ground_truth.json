@@ -1,0 +1,72 @@
+{
+  "picsum_237.jpg": {
+    "description": "A black labrador puppy sitting on a wooden deck/floor, looking up at the camera",
+    "true_triples": [
+      ["puppy", "sits on", "wooden floor"],
+      ["puppy", "is", "black labrador"]
+    ]
+  },
+  "picsum_1025.jpg": {
+    "description": "A pug dog wrapped in a plaid blanket, sitting on a dirt path in a forest",
+    "true_triples": [
+      ["dog", "wrapped in", "plaid blanket"],
+      ["dog", "sits on", "forest path"]
+    ]
+  },
+  "picsum_1074.jpg": {
+    "description": "Close-up portrait of a lioness's face looking directly at the camera",
+    "true_triples": [
+      ["lioness", "stares at", "camera"],
+      ["lioness", "has", "amber eyes"]
+    ]
+  },
+  "picsum_1084.jpg": {
+    "description": "A group of walruses with long tusks lying together on a sandy beach",
+    "true_triples": [
+      ["walruses", "lie on", "beach"],
+      ["walrus", "has", "tusks"]
+    ]
+  },
+  "picsum_1080.jpg": {
+    "description": "A pile of fresh red strawberries in containers, close-up top-down view",
+    "true_triples": [
+      ["strawberries", "are", "red"],
+      ["strawberries", "piled in", "containers"]
+    ]
+  },
+  "picsum_1069.jpg": {
+    "description": "An orange jellyfish swimming in deep blue aquarium water",
+    "true_triples": [
+      ["jellyfish", "swims in", "blue water"],
+      ["jellyfish", "is", "orange"]
+    ]
+  },
+  "picsum_1050.jpg": {
+    "description": "Rocky coastal cliffs and sea stacks along a teal-colored ocean, overcast sky",
+    "true_triples": [
+      ["cliffs", "overlook", "ocean"],
+      ["sea stacks", "rise from", "water"]
+    ]
+  },
+  "picsum_1040.jpg": {
+    "description": "A white fairy-tale castle (Neuschwanstein-like) on a forested hilltop with mountains and a lake in the background",
+    "true_triples": [
+      ["castle", "sits on", "hilltop"],
+      ["castle", "surrounded by", "forest"]
+    ]
+  },
+  "picsum_1035.jpg": {
+    "description": "A person standing with arms raised in front of a massive waterfall, with a double rainbow visible in the mist",
+    "true_triples": [
+      ["person", "stands in front of", "waterfall"],
+      ["rainbow", "appears over", "waterfall"]
+    ]
+  },
+  "picsum_1015.jpg": {
+    "description": "Aerial view of Pulpit Rock (Preikestolen), a flat cliff overlooking a deep blue fjord, with small figures of tourists visible on the rock",
+    "true_triples": [
+      ["cliff", "overlooks", "fjord"],
+      ["people", "stand on", "cliff"]
+    ]
+  }
+}

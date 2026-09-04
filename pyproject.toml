@@ -33,6 +33,11 @@ cloud = [
 mcp = [
     "mcp>=2.0",
 ]
+multimodal = [
+    "transformers>=4.40",
+    "torch>=2.0",
+    "pillow>=10.0",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.4",
