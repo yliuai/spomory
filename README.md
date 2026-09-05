@@ -70,7 +70,7 @@ Prerequisites: Python **3.11+**, [uv](https://docs.astral.sh/uv/getting-started/
 `uv` commands below).
 
 ```bash
-git clone <this repo's URL> spomory && cd spomory
+git clone <this repo's URL> memory-core && cd memory-core
 uv venv --python 3.11 .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
