@@ -8,6 +8,7 @@ in the query exactly matches a node label.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 import numpy as np
@@ -22,12 +23,37 @@ class TripleMatch:
     score: float
 
 
+# Matches the date fragments llm/openai_compatible.py's extraction prompt
+# folds into predicates ("在2023年5月7日去了", "went to on 2023-05-07").
+_CJK_DATE_FOLD_RE = re.compile(r"在\d{4}年\d{1,2}月\d{1,2}日")
+_EN_DATE_FOLD_RE = re.compile(r"\bon \d{4}-\d{1,2}-\d{1,2}\b")
+
+
+def _strip_folded_date(predicate: str) -> str:
+    """Remove a date folded into ``predicate`` before it's used for embedding
+    match, without touching the predicate actually stored on the relation.
+
+    Benchmark investigation (docs/benchmark_smoke_test.md) found that once a
+    date is folded into the predicate text, its embedding shifts enough to
+    move top-k retrieval rankings around for reasons unrelated to whether the
+    triple is actually relevant to the query. The date matters for the final
+    rendered answer (ranker.py renders `created_at` separately, and the
+    folded date is preserved in the returned context) -- not for deciding
+    which triple counts as a match, so stripping it here for matching
+    purposes only decouples the two.
+    """
+    stripped = _EN_DATE_FOLD_RE.sub("", _CJK_DATE_FOLD_RE.sub("", predicate))
+    stripped = " ".join(stripped.split())
+    return stripped or predicate
+
+
 def _triple_text(relation: Relation, entities_by_id: dict[str, Entity]) -> str:
     subject = entities_by_id.get(relation.subject_id)
     obj = entities_by_id.get(relation.object_id)
     subject_name = subject.name if subject else relation.subject_id
     object_name = obj.name if obj else relation.object_id
-    return f"{subject_name} {relation.predicate} {object_name}"
+    predicate = _strip_folded_date(relation.predicate)
+    return f"{subject_name} {predicate} {object_name}"
 
 
 def match_query_to_triples(
