@@ -32,9 +32,9 @@ and other clients via an MCP server, with a path to a cloud deployment
   rule-based default policy (`RuleBasedPolicy`) and a full GRPO training
   pipeline (`memory_manager/train_grpo.py`, actually run and verified on
   a real GPU).
-- **MCP Server**: exposes four tools — `add_memory`, `search_memory`,
-  `get_graph`, `export_memory` — verified end-to-end against a real
-  Claude Desktop.
+- **MCP Server**: exposes five tools — `add_memory`, `search_memory`,
+  `get_graph`, `export_memory`, `forget_memory` — verified end-to-end
+  against a real Claude Desktop.
 - **Memory passport export + true delete**: a JSON-LD style export format,
   physical deletion, and an audit log.
 - **Multimodal image verification**: image captioning → reuses the text

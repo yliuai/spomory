@@ -5,9 +5,11 @@
 Covers TASKS.md Epic 6.2-6.4 (internal task tracker, not part of this
 repo). This MCP server shows up in Claude Desktop / Cursor as **Spomory**
 (`src/memory_core/mcp_server/server.py`'s `MCPServer("Spomory")`), and
-exposes four tools: `add_memory`, `search_memory`, `get_graph`,
-`export_memory`. It defaults to a local `LocalGraphStore` (SQLite file
-`memory_core.sqlite3`).
+exposes five tools: `add_memory`, `search_memory`, `get_graph`,
+`export_memory`, `forget_memory` (finds the single best-matching memory
+for a query and physically deletes it — the first user-facing trigger
+for the "true delete" capability behind `export_memory`). It defaults to
+a local `LocalGraphStore` (SQLite file `memory_core.sqlite3`).
 
 > The Python package name, the CLI command (`memory-core-mcp`), and the
 > module name in code are all still `memory_core` — only the **name
@@ -164,8 +166,11 @@ GUI app spawning a subprocess often gives it an unpredictable cwd).
 3. Start a new conversation (or continue the same one) and have Claude
    call `search_memory` to ask "Where do I work?", confirming it retrieves
    what was written in step 2.
-4. To verify the cloud backend (Epic 8.2), add `DATABASE_URL` to `env`,
-   restart Claude Desktop, and repeat steps 2-3 to confirm identical
+4. Have Claude call `forget_memory`, e.g. "Please call Spomory's
+   forget_memory tool to forget that I work as a backend engineer at Some
+   Company," then repeat step 3's query and confirm that memory is gone.
+5. To verify the cloud backend (Epic 8.2), add `DATABASE_URL` to `env`,
+   restart Claude Desktop, and repeat steps 2-4 to confirm identical
    behavior.
 
 **Troubleshooting**: if Claude Desktop shows "Server disconnected," the
@@ -178,8 +183,10 @@ permission issue above was diagnosed.
 ## Verification status
 
 - **Code + unit tests**: done. `tests/test_mcp_server.py` uses the
-  official `mcp` SDK (v2, `MCPServer`)'s `list_tools()` to verify all four
-  tools register correctly; `server.py`'s retrieval/write logic reuses
+  official `mcp` SDK (v2, `MCPServer`)'s `list_tools()` to verify all five
+  tools register correctly, plus a dedicated test for `forget_memory`
+  covering matched-relation deletion, orphaned-entity cleanup, and the
+  audit log entry; `server.py`'s retrieval/write logic reuses
   the Epic 1/2 pipeline already verified against a real LLM + embedding
   model (see `tests/test_e2e_real_llm.py`), and switching the storage
   backend between local SQLite and cloud Postgres has also been verified
@@ -193,3 +200,15 @@ permission issue above was diagnosed.
   triggered embedding-based retrieval. Cursor hasn't been tested on this
   machine (not installed); see the "Cursor" section above for setup
   steps.
+- **`forget_memory` verified live**: saying "remember: I have a cat named
+  Bo" in Claude Desktop extracted two relations (`I-have-cat`,
+  `cat-named-Bo`); saying "forget that I have a cat" afterward had
+  `forget_memory` delete only the single best semantic match
+  (`cat-named-Bo`, plus the now-orphaned `Bo` entity), leaving
+  `I-have-cat` untouched. That's the intended conservative behavior
+  (delete the one best-matching relation per call, not a fuzzy sweep) —
+  not a bug — but it means a sentence that gets extracted into multiple
+  relations may need more than one (more specific) `forget_memory` call to
+  fully erase. Confirmed against both the database and the
+  `memory_core_audit.sqlite3` audit entry
+  (`{"entities_deleted": 1, "relations_deleted": 1}`).

@@ -25,7 +25,7 @@ PageRank 扩散）+ LightRAG 式双层增量知识图谱 + 轻量级 GRPO 记忆
   （`RuleBasedPolicy`），也实现了 GRPO 训练策略的完整链路
   （`memory_manager/train_grpo.py`，真实在 GPU 上跑通过）。
 - **MCP Server**：暴露 `add_memory`/`search_memory`/`get_graph`/
-  `export_memory` 四个工具，真实在 Claude Desktop 里端到端验证过。
+  `export_memory`/`forget_memory` 五个工具，真实在 Claude Desktop 里端到端验证过。
 - **记忆护照导出 + 真删除**：JSON-LD 风格导出格式，物理删除 + 审计日志。
 - **多模态图片验证**：图片 captioning → 复用文本抽取 → CLIP 二次校验候选
   三元组，诚实定位为"验证"而非"原生跨模态抽取"。

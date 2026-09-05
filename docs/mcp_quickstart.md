@@ -4,8 +4,10 @@
 
 对应 TASKS.md Epic 6.2-6.4。这个 MCP Server 在 Claude Desktop / Cursor
 里显示的名字是 **Spomory**（`src/memory_core/mcp_server/server.py` 里
-`MCPServer("Spomory")`），暴露四个工具：`add_memory`、`search_memory`、
-`get_graph`、`export_memory`，默认用本地 `LocalGraphStore`（SQLite 文件
+`MCPServer("Spomory")`），暴露五个工具：`add_memory`、`search_memory`、
+`get_graph`、`export_memory`、`forget_memory`（找到和查询最匹配的一条
+记忆并物理删除，是 `export_memory` 背后"真删除"能力第一次有了用户能在
+对话里直接触发的入口），默认用本地 `LocalGraphStore`（SQLite 文件
 `memory_core.sqlite3`）。
 
 > Python 包名、CLI 命令（`memory-core-mcp`）、代码里的模块名都还叫
@@ -143,8 +145,11 @@ Documents/Desktop/Downloads 下的普通目录，同样是为了避开上面那�
    add_memory 工具，记住：我在某某公司做后端开发"。
 3. 开一个新对话（或者接着问），让 Claude 调用 `search_memory` 查"我在哪里
    工作"，确认能检索到第 2 步写入的内容。
-4. 如果想验证云端后端（Epic 8.2），把 `env` 里加一条 `DATABASE_URL`
-   指向 Postgres，重启 Claude Desktop，重复第 2-3 步，确认行为一致。
+4. 让 Claude 调用 `forget_memory`，比如"请调用 Spomory 的 forget_memory
+   工具，忘记我在某某公司做后端开发这件事"，然后重复第 3 步的查询，确认
+   已经查不到刚才那条记忆了。
+5. 如果想验证云端后端（Epic 8.2），把 `env` 里加一条 `DATABASE_URL`
+   指向 Postgres，重启 Claude Desktop，重复第 2-4 步，确认行为一致。
 
 **排查方法**：如果 Claude Desktop 提示 "Server disconnected"，真实的报错
 （不是那句笼统的断连提示）在 `~/Library/Logs/Claude/mcp-server-Spomory.log`
@@ -154,7 +159,8 @@ Documents/Desktop/Downloads 下的普通目录，同样是为了避开上面那�
 ## 验证状态
 
 - **代码 + 单元测试**：已完成。`tests/test_mcp_server.py` 用官方 `mcp` SDK
-  （v2，`MCPServer`）的 `list_tools()` 验证四个工具都正确注册；`server.py`
+  （v2，`MCPServer`）的 `list_tools()` 验证五个工具都正确注册，另有专门测试
+  验证 `forget_memory` 删除匹配关系、清理孤立实体、写入审计日志三件事；`server.py`
   的检索/写入逻辑复用了已经用真实 LLM+embedding 验证过的 Epic 1/2 pipeline
   （见 `tests/test_e2e_real_llm.py`），存储后端在本地 SQLite 和云端 Postgres
   之间的切换也做了功能对等性验证（`tests/test_postgres_mcp_parity.py`）。
@@ -163,4 +169,12 @@ Documents/Desktop/Downloads 下的普通目录，同样是为了避开上面那�
   `mcp-server-Spomory.log` 里能看到真实的 `tools/call`，DB
   （`~/.memory-core/memory_core.sqlite3`）里能看到 `add_memory` 真实写入
   的新关系，紧接着的 `search_memory` 调用也正常触发了 embedding 检索。
+- **`forget_memory` 真实验证**：在 Claude Desktop 里说"记住：我养了一只叫
+  小白的猫"，抽取出了两条关系（`我-养了-猫`、`猫-叫-小白`）；接着说"忘记我
+  养猫这件事"，`forget_memory` 只删除了语义最匹配的那一条（`猫-叫-小白`及
+  孤立后的实体`小白`），`我-养了-猫`原样保留——这正是设计上"每次只删一条
+  最匹配的关系"的保守行为，不是 bug，但意味着一句话如果被抽取成多条关系，
+  可能需要多次调用 `forget_memory`（用更具体的措辞）才能彻底清干净。
+  数据库和 `memory_core_audit.sqlite3` 的审计记录
+  （`{"entities_deleted": 1, "relations_deleted": 1}`）都核实了这个行为。
   Cursor 未在本机测试过（未安装），接入步骤见上面"Cursor"一节。

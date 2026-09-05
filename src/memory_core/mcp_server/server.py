@@ -12,6 +12,7 @@ from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
 
+from memory_core.audit import AuditLog
 from memory_core.export.exporter import export_all
 from memory_core.graph.incremental import IncrementalIngestor
 from memory_core.graph.local_store import LocalGraphStore
@@ -29,15 +30,17 @@ def build_server(
     llm: LLMProvider,
     embedder,
     usage_tracker: UsageTracker | None = None,
+    audit_log: AuditLog | None = None,
     user_id: str = "local",
 ) -> MCPServer:
-    """Wire the four memory tools up against a given store/llm/embedder.
+    """Wire the five memory tools up against a given store/llm/embedder.
 
     Kept as a factory function (rather than module-level globals) so tests
     can inject fakes and so Epic 8.2's cloud backend swap is a one-line change
     at the call site, not a rewrite of this module. `usage_tracker` is
     optional (Epic 9.3) — when given, add_memory/search_memory calls are
-    logged for retention analysis.
+    logged for retention analysis. `audit_log` is optional (Epic 10.3) —
+    when given, `forget_memory` deletions are recorded there.
     """
     mcp = MCPServer("Spomory")
     ingestor = IncrementalIngestor(store, llm, policy=RuleBasedPolicy())
@@ -69,6 +72,51 @@ def build_server(
 
         context = build_context(relations, entities_by_id, ranked_ids, top_k=top_k)
         return context or "没有找到相关记忆。"
+
+    @mcp.tool()
+    def forget_memory(query: str) -> str:
+        """Find the single fact that best matches `query` and permanently delete it.
+
+        This is the user-facing counterpart to the "true delete" backing
+        `export_memory`'s data-ownership promise (Epic 7.3): without it,
+        that capability existed at the storage layer but a user had no way
+        to actually invoke it from a conversation (e.g. "forget that I
+        work at X"). Deletes at most one relation per call, on purpose --
+        a query vague enough to match many facts should be narrowed and
+        retried rather than risk deleting the wrong ones silently.
+        """
+        if usage_tracker is not None:
+            usage_tracker.record_event(user_id, "forget_memory")
+        relations = store.all_relations()
+        if not relations:
+            return "记忆图谱是空的，没有可以忘记的内容。"
+
+        entities = store.all_entities()
+        entities_by_id = {e.id: e for e in entities}
+        matches = match_query_to_triples(query, relations, entities_by_id, embedder, top_k=1)
+        target = matches[0].relation
+        subject = entities_by_id.get(target.subject_id)
+        obj = entities_by_id.get(target.object_id)
+        subject_name = subject.name if subject else target.subject_id
+        object_name = obj.name if obj else target.object_id
+        forgotten = f"{subject_name}{target.predicate}{object_name}"
+
+        store.delete_relation(target.id)
+        # An endpoint entity with no relations left is dead weight -- clean
+        # it up too rather than leaving an orphan node with nothing to say
+        # about it, which is what "true delete" means for Epic 7.3's promise.
+        entities_deleted = 0
+        for entity_id in {target.subject_id, target.object_id}:
+            if not store.get_neighbors(entity_id):
+                store.delete_entity(entity_id)
+                entities_deleted += 1
+
+        if audit_log is not None:
+            audit_log.record_deletion(
+                user_id=user_id, entities_deleted=entities_deleted, relations_deleted=1
+            )
+
+        return f"已忘记：{forgotten}"
 
     @mcp.tool()
     def get_graph(entity_name: str, hops: int = 1) -> str:
@@ -140,4 +188,5 @@ def default_server() -> MCPServer:
     llm = OpenAICompatibleProvider()
     embedder = SentenceTransformerProvider()
     usage_tracker = UsageTracker(_data_dir() / "memory_core_usage.sqlite3")
-    return build_server(store, llm, embedder, usage_tracker=usage_tracker)
+    audit_log = AuditLog(_data_dir() / "memory_core_audit.sqlite3")
+    return build_server(store, llm, embedder, usage_tracker=usage_tracker, audit_log=audit_log)
