@@ -30,6 +30,26 @@ def test_build_context_surfaces_created_at_so_when_questions_are_answerable():
     assert expected in context
 
 
+def test_build_context_spaces_english_sentences_instead_of_running_words_together():
+    """Regression test for a real gap found while writing the English README:
+    the sentence template was written assuming CJK text (no spaces between
+    words is normal there), so English relations rendered as an unreadable
+    run-on like "Idoes AI research atCAS" with a Chinese timestamp label
+    tacked on regardless of the input language.
+    """
+    a, b = Entity(name="I", type="person"), Entity(name="CAS", type="organization")
+    entities_by_id = {a.id: a, b.id: b}
+    fixed_time = datetime(2026, 3, 14, 12, 34, 56, tzinfo=UTC)
+    relation = Relation(
+        subject_id=a.id, predicate="does AI research at", object_id=b.id, created_at=fixed_time
+    )
+
+    context = build_context([relation], entities_by_id, [a.id, b.id], top_k=2)
+
+    expected_time = fixed_time.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    assert context == f"I does AI research at CAS (recorded at {expected_time})."
+
+
 def test_build_context_produces_readable_sentences_in_relevance_order():
     zhangsan = Entity(name="张三", type="person")
     company = Entity(name="某公司", type="organization")
@@ -53,13 +73,16 @@ def test_build_context_produces_readable_sentences_in_relevance_order():
 
 
 def test_build_context_dedupes_and_ignores_out_of_scope_relations():
-    a, b, c = (Entity(name=n, type="thing") for n in "abc")
+    # Uses CJK names so the no-space concatenation assertion below tests
+    # dedup/scoping specifically, independent of the language-dependent
+    # spacing covered by the two tests above.
+    a, b, c = (Entity(name=n, type="thing") for n in "甲乙丙")
     entities_by_id = {e.id: e for e in [a, b, c]}
     relations = [
-        Relation(subject_id=a.id, predicate="r", object_id=b.id),
-        Relation(subject_id=a.id, predicate="r", object_id=b.id),  # duplicate
-        Relation(subject_id=c.id, predicate="r", object_id=c.id),  # not in top_k
+        Relation(subject_id=a.id, predicate="连", object_id=b.id),
+        Relation(subject_id=a.id, predicate="连", object_id=b.id),  # duplicate
+        Relation(subject_id=c.id, predicate="连", object_id=c.id),  # not in top_k
     ]
     context = build_context(relations, entities_by_id, ranked_entity_ids=[a.id, b.id], top_k=2)
-    assert context.startswith("arb")
-    assert context.count("arb") == 1  # deduped, not appearing twice
+    assert context.startswith("甲连乙")
+    assert context.count("甲连乙") == 1  # deduped, not appearing twice

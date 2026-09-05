@@ -4,6 +4,28 @@ from __future__ import annotations
 
 from memory_core.graph.models import Entity, Relation
 
+_CJK_RANGES = (
+    (0x4E00, 0x9FFF),  # CJK Unified Ideographs
+    (0x3400, 0x4DBF),  # CJK Unified Ideographs Extension A
+    (0x3000, 0x303F),  # CJK punctuation
+    (0xFF00, 0xFFEF),  # halfwidth/fullwidth forms (e.g. full-width punctuation)
+)
+
+
+def _is_cjk_text(text: str) -> bool:
+    """Whether ``text`` reads as CJK, to decide how a sentence should be assembled.
+
+    Chinese (and Japanese/Korean) text conventionally has no spaces between
+    words, so joining subject+predicate+object directly is correct for it.
+    Space-delimited languages (English and most others) need spaces at
+    those joins or the sentence reads as one run-on word -- there's no
+    language field on Relation/Entity to consult, so this looks at the
+    actual characters instead.
+    """
+    return any(
+        any(start <= ord(ch) <= end for start, end in _CJK_RANGES) for ch in text
+    )
+
 
 def _relation_to_sentence(relation: Relation, entities_by_id: dict[str, Entity]) -> str:
     subject = entities_by_id.get(relation.subject_id)
@@ -25,7 +47,10 @@ def _relation_to_sentence(relation: Relation, entities_by_id: dict[str, Entity])
     # hours for a China-local deployment) from what "when did I say this"
     # intuitively expects.
     recorded = relation.created_at.astimezone().strftime("%Y-%m-%d %H:%M:%S")
-    return f"{subject_name}{relation.predicate}{object_name}（记录于{recorded}）。"
+
+    if _is_cjk_text(f"{subject_name}{relation.predicate}{object_name}"):
+        return f"{subject_name}{relation.predicate}{object_name}（记录于{recorded}）。"
+    return f"{subject_name} {relation.predicate} {object_name} (recorded at {recorded})."
 
 
 def build_context(

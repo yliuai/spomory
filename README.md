@@ -148,22 +148,17 @@ back):
 
 ```
 added 3 entities, 2 relations
-Idoes AI research atCAS（记录于2026-09-05 10:34:29）。Idoes AI research inPython（记录于2026-09-05 10:34:29）。
+I do AI research at CAS (recorded at 2026-09-05 10:40:00).I do AI research mostly in Python (recorded at 2026-09-05 10:40:00).
 ```
 
 Exact wording and entity/relation counts depend on the LLM's own
 extraction and will vary between runs, but as long as the env vars are
 set correctly, non-empty output means the pipeline works end to end.
-
-Worth calling out explicitly: the sentence rendered by
-`retrieval/ranker.py` is concatenated with **no spaces and a Chinese
-timestamp label** (`（记录于...）。`) regardless of the input language —
-it was written assuming CJK text, where that's normal, so English input
-comes out looking broken like above ("Idoes", "atCAS"). This is a real,
-current limitation, not a display glitch — full English-language support
-would need that template (and the Chinese-only triple-extraction prompt
-in `llm/openai_compatible.py`) to branch on language, which hasn't been
-done yet.
+`retrieval/ranker.py` detects whether a relation's text is CJK or not and
+renders it accordingly (no spaces + a Chinese timestamp label for CJK,
+spaced words + an English timestamp label otherwise), so English input no
+longer comes out as one run-on word like earlier versions of this demo
+did.
 
 ## Quickstart: MCP Server (connecting to Claude Desktop / Cursor)
 
@@ -232,14 +227,6 @@ audience grows. If you need one translated sooner, open an issue.
   that limits training effectiveness.
 - The cloud API/billing is skeleton-level only and hasn't been connected
   to a real production environment.
-- **Retrieved-context rendering and triple extraction are Chinese-first**:
-  `retrieval/ranker.py` concatenates sentences with no spaces and a
-  Chinese timestamp label, and the extraction prompt in
-  `llm/openai_compatible.py` is written in Chinese — both assume CJK text.
-  English input still gets processed, but the assembled context reads as
-  broken English (see the demo output above). Making this properly
-  bilingual means branching both on the input/output language, which
-  hasn't been built yet.
 
 ## License
 
