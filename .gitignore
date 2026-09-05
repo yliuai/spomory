@@ -18,6 +18,7 @@ benchmarks/results/*.json
 !benchmarks/results/locomo_subset_smoke.json
 !benchmarks/results/locomo_subset_baseline.json
 !benchmarks/results/locomo_full_run.json
+!benchmarks/results/locomo_full_run_after_date_fix.json
 !benchmarks/results/multimodal_eval.json
 !benchmarks/results/multimodal_real_extraction.json
 benchmarks/data/*
