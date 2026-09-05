@@ -1,4 +1,4 @@
-# Epic 3.4-3.6：GPU 训练——已跑通，真实结果是"没学到东西"
+# Epic 3.4-3.6：GPU 训练——已跑通
 
 用的是 `10.2.29.91`（2×NVIDIA TITAN RTX 24GB，CentOS 8），项目部署在
 `/mnt/coding/memory-core`（不是 `/root`——见下面"磁盘/缓存"一节的原因）。
@@ -13,13 +13,11 @@
    `/mnt/coding/cache`（492GB，只用了一小部分）然后软链接回去，并在
    `~/.bashrc` 里加了 `HF_HOME`/`UV_CACHE_DIR` 指向新路径。**如果你在这台
    机器上继续装东西，缓存已经是安全的了，不用再管。**
-
 2. **torch 默认装的 CUDA 版本比驱动新**：`uv pip install -e ".[rl]"` 默认
    拉的 torch 2.14.0 绑定的是 CUDA 13 运行时，但驱动版本（570.133.07）
    最高只支持 CUDA 12.8——`torch.cuda.is_available()` 返回 `False`，报
    "driver too old"。修复：`uv pip install 'torch==2.6.0' --reinstall-package torch --reinstall-package nvidia-cuda-runtime-cu12`，
    会自动换成绑定 CUDA 12.4 运行时的版本，和驱动兼容。
-
 3. **单 GPU 跑 7B 模型时 transformers 悄悄把部分层扔到 "meta" 设备**：
    只用一张 24GB 卡（`CUDA_VISIBLE_DEVICES=0`）时，`from_pretrained` 的大
    模型加载优化会把放不下的层留在 meta 设备上不实体化，backward 时报
