@@ -1,95 +1,111 @@
 # Spomory
 
-个人 AI 记忆产品的核心引擎：HippoRAG 式检索（query→triple 匹配 + 个性化
-PageRank 扩散）+ LightRAG 式双层增量知识图谱 + 轻量级 GRPO 记忆管理策略，
-通过 MCP Server 接入 Claude Desktop / Cursor 等客户端，并预留了云端部署
-（Postgres 后端、FastAPI 鉴权/计费骨架）的扩展路径。
+**English | [中文](README.zh-CN.md)**
 
-> Spomory 是产品/客户端展示名；Python 包名、CLI 命令
-> （`memory-core-mcp`）、代码里的模块名（`memory_core`）保持不变，见下方
-> "快速开始：MCP Server"一节的说明。
+The core engine behind a personal AI memory product: HippoRAG-style
+retrieval (query→triple matching + personalized PageRank diffusion) +
+a LightRAG-style dual-layer incremental knowledge graph + a lightweight
+GRPO-trained memory-management policy, exposed to Claude Desktop / Cursor
+and other clients via an MCP server, with a path to a cloud deployment
+(Postgres backend, FastAPI auth/billing skeleton) already scaffolded.
 
-## 已实现的能力
+> Spomory is the product/client-facing display name. The Python package
+> name, CLI command (`memory-core-mcp`), and module name (`memory_core`)
+> are unchanged — see the "Quickstart: MCP Server" section below.
 
-- **可插拔 LLM / Embedding 接口**：默认走任意 OpenAI 兼容 API（含国产模型）
-  + 本地 `sentence-transformers`（默认 `bge-m3`，中英文混合）。
-- **双层增量知识图谱**：实体层/关系层独立建模，新数据只做抽取+合并，不
-  重建整图；默认本地 `LocalGraphStore`（networkx + SQLite），也有
-  `PostgresGraphStore` 云端实现，两者共用同一套行为契约测试。
-- **HippoRAG 2 式检索**：query 直接匹配三元组而非只匹配实体节点，检索到
-  的种子节点做个性化 PageRank 扩散做多跳关联，再拼装成自然语言上下文
-  （带来源时间戳，支持"我什么时候说过 X"这类问题）。
-- **记忆管理**：ADD/UPDATE/DELETE/NOOP 动作空间，默认规则式策略
-  （`RuleBasedPolicy`），也实现了 GRPO 训练策略的完整链路
-  （`memory_manager/train_grpo.py`，真实在 GPU 上跑通过）。
-- **MCP Server**：暴露 `add_memory`/`search_memory`/`get_graph`/
-  `export_memory` 四个工具，真实在 Claude Desktop 里端到端验证过。
-- **记忆护照导出 + 真删除**：JSON-LD 风格导出格式，物理删除 + 审计日志。
-- **多模态图片验证**：图片 captioning → 复用文本抽取 → CLIP 二次校验候选
-  三元组，诚实定位为"验证"而非"原生跨模态抽取"。
-- **云端骨架**：FastAPI 用户认证/API Key/配额、Stripe webhook 计费雏形
-  （均为骨架级实现，未做生产部署）。
+## What's implemented
 
-## 项目结构
+- **Pluggable LLM / embedding providers**: defaults to any OpenAI-compatible
+  API (including Chinese-market LLM providers) + local
+  `sentence-transformers` (default `bge-m3`, bilingual Chinese/English).
+- **Dual-layer incremental knowledge graph**: entities and relations are
+  modeled as independent layers; new data is only extracted and merged in,
+  never a full rebuild. Defaults to a local `LocalGraphStore`
+  (networkx + SQLite); a `PostgresGraphStore` cloud implementation also
+  exists, and both share the same behavioral contract test suite.
+- **HippoRAG 2-style retrieval**: the query is matched directly against
+  triples rather than only against entity nodes; the matched seed nodes
+  are diffused via personalized PageRank for multi-hop association, then
+  assembled into a natural-language context (with source timestamps, so
+  "when did I mention X" is answerable).
+- **Memory management**: an ADD/UPDATE/DELETE/NOOP action space, with a
+  rule-based default policy (`RuleBasedPolicy`) and a full GRPO training
+  pipeline (`memory_manager/train_grpo.py`, actually run and verified on
+  a real GPU).
+- **MCP Server**: exposes four tools — `add_memory`, `search_memory`,
+  `get_graph`, `export_memory` — verified end-to-end against a real
+  Claude Desktop.
+- **Memory passport export + true delete**: a JSON-LD style export format,
+  physical deletion, and an audit log.
+- **Multimodal image verification**: image captioning → reuses the text
+  extraction pipeline → CLIP cross-checks candidate triples. Honestly
+  positioned as "verification," not "native cross-modal extraction."
+- **Cloud skeleton**: FastAPI user auth/API keys/quotas, a Stripe webhook
+  billing scaffold (skeleton-level only, not production-deployed).
+
+## Project layout
 
 ```
 src/
 ├── memory_core/
-│   ├── graph/            # 实体/关系模型、存储适配器（本地SQLite/云端Postgres）、增量写入
-│   ├── retrieval/        # query→triple匹配、个性化PageRank、上下文拼装
-│   ├── memory_manager/   # 动作空间、奖励函数、GRPO训练脚本、策略推理
-│   ├── multimodal/       # 图片captioning + CLIP验证
-│   ├── mcp_server/       # MCP Server（对外分发入口）
-│   ├── export/           # 记忆护照导出格式与真删除
-│   ├── llm/              # 可插拔 LLM/Embedding 接口
-│   ├── audit.py          # 删除审计日志
-│   └── usage.py          # 留存/使用埋点
-└── cloud_api/            # FastAPI 云端服务骨架（认证、配额、计费）
-benchmarks/                # LoCoMo/LongMemEval 评测 harness + 多模态对比实验
-tests/                     # 94+ 个测试，覆盖单元测试到真实 LLM/GPU/Postgres 端到端验证
-docs/                      # 各 Epic 的设计说明、验证报告、操作手册（见下方索引）
+│   ├── graph/            # entity/relation models, storage adapters (local SQLite / cloud Postgres), incremental writes
+│   ├── retrieval/        # query→triple matching, personalized PageRank, context assembly
+│   ├── memory_manager/   # action space, reward functions, GRPO training script, policy inference
+│   ├── multimodal/       # image captioning + CLIP verification
+│   ├── mcp_server/       # MCP Server (the distribution entry point)
+│   ├── export/           # memory passport export format + true delete
+│   ├── llm/              # pluggable LLM/embedding providers
+│   ├── audit.py          # deletion audit log
+│   └── usage.py          # retention/usage tracking
+└── cloud_api/            # FastAPI cloud service skeleton (auth, quotas, billing)
+benchmarks/                # LoCoMo/LongMemEval evaluation harness + multimodal comparison experiments
+tests/                     # 94+ tests, from unit tests to real LLM/GPU/Postgres end-to-end verification
+docs/                      # per-epic design notes, verification reports, runbooks (see index below)
 ```
 
-## 安装
+## Installation
 
-前置要求：Python **3.11+**、[uv](https://docs.astral.sh/uv/getting-started/installation/)
-（没有 uv 也可以用 `python -m venv` + `pip install -e` 替代下面的 `uv` 命令）。
+Prerequisites: Python **3.11+**, [uv](https://docs.astral.sh/uv/getting-started/installation/)
+(no uv? `python -m venv` + `pip install -e` works as a substitute for the
+`uv` commands below).
 
 ```bash
-git clone <本仓库地址> memory-core && cd memory-core
+git clone <this repo's URL> spomory && cd spomory
 uv venv --python 3.11 .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
-# 按需选择依赖组，可以叠加安装，不用一次装全部：
-uv pip install -e ".[dev]"                 # 跑测试/lint 必需
-uv pip install -e ".[llm,embedding]"       # 跑 “最小可用记忆系统” 必需（见下方 Demo）
-uv pip install -e ".[mcp]"                 # 额外需要：接入 Claude Desktop/Cursor
-uv pip install -e ".[rl]"                  # 额外需要：GRPO 训练（需要 GPU + CUDA）
-uv pip install -e ".[cloud]"               # 额外需要：云端 API / Postgres 后端
-uv pip install -e ".[multimodal]"          # 额外需要：图片 + CLIP 验证
+# Pick dependency groups as needed — they can be combined, no need to install everything:
+uv pip install -e ".[dev]"                 # required to run tests/lint
+uv pip install -e ".[llm,embedding]"       # required for the "minimal working memory system" (see the demo below)
+uv pip install -e ".[mcp]"                 # extra: connecting to Claude Desktop/Cursor
+uv pip install -e ".[rl]"                  # extra: GRPO training (requires a GPU + CUDA)
+uv pip install -e ".[cloud]"               # extra: cloud API / Postgres backend
+uv pip install -e ".[multimodal]"          # extra: image + CLIP verification
 ```
 
-`embedding` 这一组首次调用时会从 HuggingFace 下载默认模型 `BAAI/bge-m3`
-（约 2.2GB），请确保网络可达 huggingface.co（国内可设置
-`export HF_ENDPOINT=https://hf-mirror.com` 走镜像）。也可以用
-`export EMBEDDING_MODEL=<其他 sentence-transformers 模型名>` 换成更小的模型。
+The `embedding` group downloads the default model `BAAI/bge-m3` from
+HuggingFace on first use (~2.2GB) — make sure huggingface.co is reachable
+(if you're behind the Great Firewall, `export HF_ENDPOINT=https://hf-mirror.com`
+routes through a mirror). You can also swap in a smaller model via
+`export EMBEDDING_MODEL=<any sentence-transformers model name>`.
 
-`llm` 这一组本身不下载任何模型，但**运行时必须设置** `LLM_API_KEY`（任意
-OpenAI 兼容的 Chat Completions 接口都可以，官方 OpenAI、DeepSeek、通义千问
-等都行）：
+The `llm` group itself downloads nothing, but **`LLM_API_KEY` must be set
+at runtime** (any OpenAI-compatible Chat Completions endpoint works — OpenAI,
+DeepSeek, Qwen, etc.):
 
 ```bash
 export LLM_API_KEY=sk-...
-export LLM_BASE_URL=https://api.deepseek.com   # 可选；不设默认是 OpenAI 官方地址
-export LLM_MODEL=deepseek-chat                 # 可选；不设默认是 gpt-4o-mini
+export LLM_BASE_URL=https://api.deepseek.com   # optional; defaults to OpenAI's endpoint
+export LLM_MODEL=deepseek-chat                 # optional; defaults to gpt-4o-mini
 ```
 
-### 跑通一个最小例子（不依赖 MCP，纯 Python 调用）
+### Run a minimal example (no MCP, plain Python calls)
 
-装好 `dev` + `llm` + `embedding` 三组、设置好上面三个环境变量后，可以直接
-用下面这段脚本验证"写入记忆 → 检索记忆"整条链路是否工作（对应
-`mcp_server/server.py` 里 `add_memory`/`search_memory` 两个工具背后的真实
-逻辑，只是这里绕开了 MCP 协议层，直接调库）：
+With `dev` + `llm` + `embedding` installed and the three env vars above
+set, this script exercises the full "write a memory → retrieve it"
+pipeline directly (the same logic behind `mcp_server/server.py`'s
+`add_memory`/`search_memory` tools, just calling the library directly
+instead of going through the MCP protocol layer):
 
 ```python
 # demo.py
@@ -102,17 +118,17 @@ from memory_core.retrieval.ppr import personalized_pagerank, rank_entities
 from memory_core.retrieval.query_match import match_query_to_triples
 from memory_core.retrieval.ranker import build_context
 
-store = LocalGraphStore("demo.sqlite3")          # 本地文件，删掉即重置
-llm = OpenAICompatibleProvider()                 # 读取 LLM_API_KEY 等环境变量
-embedder = SentenceTransformerProvider()         # 首次运行会下载 bge-m3
+store = LocalGraphStore("demo.sqlite3")          # a local file; delete it to reset
+llm = OpenAICompatibleProvider()                 # reads LLM_API_KEY etc. from the environment
+embedder = SentenceTransformerProvider()         # downloads bge-m3 on first run
 
-# 1. 写入一条记忆：LLM 抽取三元组，增量合并进图谱
+# 1. Write a memory: the LLM extracts triples, incrementally merged into the graph
 ingestor = IncrementalIngestor(store, llm, policy=RuleBasedPolicy())
-result = ingestor.ingest("我在中科院做AI研究，主要用 Python。", source_id="demo")
-print(f"新增实体 {result.new_entities} 个，新增关系 {result.new_relations} 条")
+result = ingestor.ingest("I do AI research at CAS, mostly in Python.", source_id="demo")
+print(f"added {result.new_entities} entities, {result.new_relations} relations")
 
-# 2. 检索：query 匹配三元组 -> PPR 扩散 -> 拼装自然语言上下文
-query = "我在哪里工作？"
+# 2. Retrieve: match the query against triples -> PPR diffusion -> assemble a natural-language context
+query = "Where do I work?"
 entities, relations = store.all_entities(), store.all_relations()
 entities_by_id = {e.id: e for e in entities}
 matches = match_query_to_triples(query, relations, entities_by_id, embedder, top_k=10)
@@ -126,74 +142,88 @@ print(build_context(relations, entities_by_id, ranked_ids, top_k=10))
 python demo.py
 ```
 
-这是用 DeepSeek 真实跑出来的输出（下面这段不是编的，实测截图式记录）：
+Here's real output from a live run against DeepSeek (not fabricated —
+this is what actually came back):
 
 ```
 新增实体 4 个，新增关系 2 条
 我在中科院做AI研究（记录于2026-09-04 22:36:00）。我主要用Python（记录于2026-09-04 22:36:00）。
 ```
 
-具体措辞、实体/关系数量取决于所用 LLM 的抽取结果，每次跑不完全一致，
-但只要环境变量配对了，跑出非空结果就说明链路是通的。
+The exact wording, entity/relation counts, and even the output language
+depend on the LLM's own extraction (the example above was run with a
+Chinese prompt/input, hence the Chinese output) — every run differs
+slightly, but as long as the env vars are set correctly, getting non-empty
+output means the pipeline is working end to end.
 
-## 快速开始：MCP Server（接入 Claude Desktop / Cursor）
+## Quickstart: MCP Server (connecting to Claude Desktop / Cursor)
 
-这个 MCP Server 在 Claude Desktop / Cursor 里显示的名字是 **Spomory**
-（由客户端配置文件 `mcpServers` 下的键名决定，见下方文档）；Python 包名/
-CLI 命令仍然是 `memory-core` / `memory-core-mcp`，两者是独立的。
+This MCP server shows up in Claude Desktop / Cursor as **Spomory** (set
+by the `mcpServers` key in the client's config file — see the docs
+below). The Python package name and CLI command are still
+`memory-core` / `memory-core-mcp`; the two are independent of each other.
 
-装好 `mcp` 依赖组、设置好 `LLM_API_KEY` 等环境变量后：
+With the `mcp` dependency group installed and `LLM_API_KEY` etc. set:
 
 ```bash
 uv pip install -e ".[llm,embedding,mcp]"
-memory-core-mcp   # 启动后常驻，作为 stdio MCP server 等待客户端连接
+memory-core-mcp   # stays running as a stdio MCP server, waiting for a client to connect
 ```
 
-数据默认落在 `~/.memory-core/`（可用 `MEMORY_CORE_DATA_DIR` 环境变量改变），
-设置了 `DATABASE_URL` 则改用 Postgres 后端而非本地 SQLite。
+Data lives in `~/.memory-core/` by default (override with
+`MEMORY_CORE_DATA_DIR`); setting `DATABASE_URL` switches to the Postgres
+backend instead of local SQLite.
 
-把它接到 Claude Desktop / Cursor 需要在客户端配置文件里注册这个命令的**绝对
-路径**（而不是指望 `PATH`），完整步骤、配置文件示例、以及一个真实踩过的坑
-（macOS 上 TCC 隐私保护会拦截跑在 `~/Documents` 下的 venv，需要把 venv 装到
-`~/Documents` 之外）见 [`docs/mcp_quickstart.md`](docs/mcp_quickstart.md)。
+Connecting it to Claude Desktop / Cursor requires registering this
+command's **absolute path** in the client's config file (don't rely on
+`PATH`). Full steps, a config file example, and a real gotcha we actually
+hit (macOS's TCC privacy protection blocks a venv running under
+`~/Documents`) are in
+[`docs/mcp_quickstart.en.md`](docs/mcp_quickstart.en.md).
 
-## 测试
+## Testing
 
 ```bash
-pytest                    # 全部测试
-pytest -m "not slow"      # 跳过需要下载模型/训练的测试，几秒内跑完
+pytest                    # everything
+pytest -m "not slow"      # skip tests that download models / train — runs in seconds
 ```
 
-多数"慢"测试不是 mock，而是真实调用（真实 LLM API、真实本地 embedding
-模型、真实 CLIP 模型），需要相应的环境变量（`LLM_API_KEY` 等）或已下载的
-模型缓存。
+Most of the "slow" tests aren't mocked — they're real calls (real LLM API,
+real local embedding model, real CLIP model) and need the corresponding
+env vars (`LLM_API_KEY`, etc.) or an already-downloaded model cache.
 
-## 文档索引
+## Documentation index
 
+| Doc | Content |
+|---|---|
+| [mcp_quickstart.en.md](docs/mcp_quickstart.en.md) ([中文](docs/mcp_quickstart.md)) | MCP Server install, configuration, connecting Claude Desktop/Cursor, real-world gotchas |
+| [graph_store_interface.md](docs/graph_store_interface.md) *(Chinese only)* | Storage adapter interface design |
+| [export_format.md](docs/export_format.md) *(Chinese only)* | The "memory passport" export format |
+| [dataset_format.md](docs/dataset_format.md) *(Chinese only)* | GRPO training data format and how the real dataset was generated |
+| [methodology.md](docs/methodology.md) *(Chinese only)* | Technical methodology: what's actually verified vs. still open |
+| [benchmark_smoke_test.md](docs/benchmark_smoke_test.md) *(Chinese only)* | Real LoCoMo benchmark results and failure-case analysis |
+| [memory_manager_eval.md](docs/memory_manager_eval.md) *(Chinese only)* | Rule-based vs. GRPO-trained policy comparison, including the debugging process |
+| [multimodal_verification.md](docs/multimodal_verification.md) *(Chinese only)* | Image + CLIP verification experiment results |
+| [gpu_training_runbook.md](docs/gpu_training_runbook.md) *(Chinese only)* | GPU training environment setup log (including real gotchas hit) |
+| [postgres_setup.md](docs/postgres_setup.md) *(Chinese only)* | Cloud Postgres backend deployment log |
+| [leaderboard_submission.md](docs/leaderboard_submission.md) *(Chinese only)* | Third-party leaderboard research |
+| [mvp_scope.md](docs/mvp_scope.md) *(Chinese only)* | MVP scope definition |
+| [privacy_policy_draft.md](docs/privacy_policy_draft.md) / [product_copy_memory_passport.md](docs/product_copy_memory_passport.md) *(Chinese only)* | Draft privacy policy / external-facing product copy |
 
-| 文档                                                                                                                              | 内容                                                            |
-| --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| [mcp_quickstart.md](docs/mcp_quickstart.md)                                                                                       | MCP Server 安装、配置、接入 Claude Desktop/Cursor、真实踩坑记录 |
-| [graph_store_interface.md](docs/graph_store_interface.md)                                                                         | 存储适配器接口设计说明                                          |
-| [export_format.md](docs/export_format.md)                                                                                         | "记忆护照"导出格式                                              |
-| [dataset_format.md](docs/dataset_format.md)                                                                                       | GRPO 训练数据格式与真实数据集生成过程                           |
-| [methodology.md](docs/methodology.md)                                                                                             | 技术方法论：已验证结论 vs 尚待验证的部分                        |
-| [benchmark_smoke_test.md](docs/benchmark_smoke_test.md)                                                                           | LoCoMo 真实跑分结果与失败案例分析                               |
-| [memory_manager_eval.md](docs/memory_manager_eval.md)                                                                             | 规则式 vs GRPO 训练后策略对比，含调试过程                       |
-| [multimodal_verification.md](docs/multimodal_verification.md)                                                                     | 图片 + CLIP 二次校验实验结果                                    |
-| [gpu_training_runbook.md](docs/gpu_training_runbook.md)                                                                           | GPU 训练环境部署记录（含真实踩过的坑）                          |
-| [postgres_setup.md](docs/postgres_setup.md)                                                                                       | 云端 Postgres 后端部署记录                                      |
-| [leaderboard_submission.md](docs/leaderboard_submission.md)                                                                       | 第三方评测榜单调研                                              |
-| [mvp_scope.md](docs/mvp_scope.md)                                                                                                 | MVP 最小功能范围定义                                            |
-| [privacy_policy_draft.md](docs/privacy_policy_draft.md) / [product_copy_memory_passport.md](docs/product_copy_memory_passport.md) | 隐私政策草案 / 对外产品文案素材                                 |
+The docs above are currently Chinese-only except where an English version
+is linked; they'll be translated as the project's English-speaking
+audience grows. If you need one translated sooner, open an issue.
 
-## 已知限制
+## Known limitations
 
-- 语音输入的多模态验证（ASR + 音频 embedding）尚未实现。
-- GRPO 训练数据规模（140条真实样本）和训练步数仍偏小，`memory_manager_eval.md`
-  如实记录了这个限制对训练效果的影响。
-- 云端 API/计费仅为骨架实现，未接入真实生产环境。
+- Multimodal verification for voice input (ASR + audio embedding) isn't
+  implemented yet.
+- The GRPO training dataset (140 real samples) and the number of training
+  steps are still small; `memory_manager_eval.md` honestly documents how
+  that limits training effectiveness.
+- The cloud API/billing is skeleton-level only and hasn't been connected
+  to a real production environment.
 
 ## License
 
-见 [LICENSE](LICENSE)。
+See [LICENSE](LICENSE).

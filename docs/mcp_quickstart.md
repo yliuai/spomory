@@ -1,5 +1,7 @@
 # MCP Server 快速开始
 
+**[English](mcp_quickstart.en.md) | 中文**
+
 对应 TASKS.md Epic 6.2-6.4。这个 MCP Server 在 Claude Desktop / Cursor
 里显示的名字是 **Spomory**（`src/memory_core/mcp_server/server.py` 里
 `MCPServer("Spomory")`），暴露四个工具：`add_memory`、`search_memory`、
