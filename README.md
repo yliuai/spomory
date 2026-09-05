@@ -185,6 +185,29 @@ hit (macOS's TCC privacy protection blocks a venv running under
 `~/Documents`) are in
 [`docs/mcp_quickstart.en.md`](docs/mcp_quickstart.en.md).
 
+## Measured results
+
+Real runs against DeepSeek on 84 QA pairs from LoCoMo-10 (conv-26, first
+150 turns) — not cherry-picked, and not competitive with the bigger
+players' published numbers yet:
+
+| Metric | Value |
+|---|---|
+| Recall@10 (did the right evidence turn make it into context) | 52.4% |
+| Accuracy — strict substring match | 19.0% |
+| Accuracy — LLM-judged (looser, wording-tolerant) | 44.0% |
+
+A prior run (before a fix that folds dates into extracted predicates so
+"when" questions are answerable) scored lower on accuracy but higher on
+recall (62.0%) — the fix traded some retrieval recall for a real
++14.3-point accuracy gain, and we went and found out exactly why instead
+of just reporting the accuracy number: the date-folding instruction
+sometimes misfires on content-free small talk ("Thanks!" → "thanked on
+2023-07-03"), and those extra low-value triples crowd out relevant ones
+out of the fixed top-10 retrieval window. Full numbers, per-category
+breakdown, and the side-by-side extraction comparison that found this are
+in [`docs/benchmark_smoke_test.md`](docs/benchmark_smoke_test.md).
+
 ## Testing
 
 ```bash

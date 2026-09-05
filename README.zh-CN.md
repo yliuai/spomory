@@ -159,6 +159,27 @@ memory-core-mcp   # 启动后常驻，作为 stdio MCP server 等待客户端连
 （macOS 上 TCC 隐私保护会拦截跑在 `~/Documents` 下的 venv，需要把 venv 装到
 `~/Documents` 之外）见 [`docs/mcp_quickstart.md`](docs/mcp_quickstart.md)。
 
+## 已验证效果
+
+用真实 DeepSeek 在 LoCoMo-10（conv-26 前 150 轮，84 条问答对）上跑出来的
+结果——不是精选的漂亮数字，目前也还比不过 Mem0/Perseus Vault 这些头部
+玩家公开的数字：
+
+| 指标 | 数值 |
+|---|---|
+| Recall@10（正确的证据轮次有没有进入上下文） | 52.4% |
+| Accuracy — 严格子串匹配 | 19.0% |
+| Accuracy — LLM 语义评判（措辞不同但语义正确也算对） | 44.0% |
+
+修复前（把日期折叠进三元组谓语这个改动之前，"我什么时候说过X"这类问题
+本来答不出来）准确率更低但 Recall@10 更高（62.0%）——这个修复用一部分
+检索召回率换来了真实的 +14.3 个百分点准确率提升，而且没有止步于"准确率
+变好了"就收工，而是去查清楚了 Recall 为什么会掉：日期折叠指令有时会
+误触发在没有信息量的寒暄上（"谢谢！"被折成"在2023年7月3日道谢"），这些
+额外的低价值三元组会挤占固定 `top_k=10` 检索窗口里真正相关三元组的名额。
+完整数据、按问题类型的拆解、以及定位这个问题用的新旧抽取结果对比，都在
+[`docs/benchmark_smoke_test.md`](docs/benchmark_smoke_test.md)。
+
 ## 测试
 
 ```bash
