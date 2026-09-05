@@ -1,9 +1,13 @@
-# memory-core
+# Spomory
 
 个人 AI 记忆产品的核心引擎：HippoRAG 式检索（query→triple 匹配 + 个性化
 PageRank 扩散）+ LightRAG 式双层增量知识图谱 + 轻量级 GRPO 记忆管理策略，
 通过 MCP Server 接入 Claude Desktop / Cursor 等客户端，并预留了云端部署
 （Postgres 后端、FastAPI 鉴权/计费骨架）的扩展路径。
+
+> Spomory 是产品/客户端展示名；Python 包名、CLI 命令
+> （`memory-core-mcp`）、代码里的模块名（`memory_core`）保持不变，见下方
+> "快速开始：MCP Server"一节的说明。
 
 ## 已实现的能力
 
