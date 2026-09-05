@@ -142,19 +142,28 @@ print(build_context(relations, entities_by_id, ranked_ids, top_k=10))
 python demo.py
 ```
 
-Here's real output from a live run against DeepSeek (not fabricated —
-this is what actually came back):
+Here's real output from a live run against DeepSeek with the exact input
+shown above (not fabricated, not cleaned up — this is what actually came
+back):
 
 ```
-新增实体 4 个，新增关系 2 条
-我在中科院做AI研究（记录于2026-09-04 22:36:00）。我主要用Python（记录于2026-09-04 22:36:00）。
+added 3 entities, 2 relations
+Idoes AI research atCAS（记录于2026-09-05 10:34:29）。Idoes AI research inPython（记录于2026-09-05 10:34:29）。
 ```
 
-The exact wording, entity/relation counts, and even the output language
-depend on the LLM's own extraction (the example above was run with a
-Chinese prompt/input, hence the Chinese output) — every run differs
-slightly, but as long as the env vars are set correctly, getting non-empty
-output means the pipeline is working end to end.
+Exact wording and entity/relation counts depend on the LLM's own
+extraction and will vary between runs, but as long as the env vars are
+set correctly, non-empty output means the pipeline works end to end.
+
+Worth calling out explicitly: the sentence rendered by
+`retrieval/ranker.py` is concatenated with **no spaces and a Chinese
+timestamp label** (`（记录于...）。`) regardless of the input language —
+it was written assuming CJK text, where that's normal, so English input
+comes out looking broken like above ("Idoes", "atCAS"). This is a real,
+current limitation, not a display glitch — full English-language support
+would need that template (and the Chinese-only triple-extraction prompt
+in `llm/openai_compatible.py`) to branch on language, which hasn't been
+done yet.
 
 ## Quickstart: MCP Server (connecting to Claude Desktop / Cursor)
 
@@ -223,6 +232,14 @@ audience grows. If you need one translated sooner, open an issue.
   that limits training effectiveness.
 - The cloud API/billing is skeleton-level only and hasn't been connected
   to a real production environment.
+- **Retrieved-context rendering and triple extraction are Chinese-first**:
+  `retrieval/ranker.py` concatenates sentences with no spaces and a
+  Chinese timestamp label, and the extraction prompt in
+  `llm/openai_compatible.py` is written in Chinese — both assume CJK text.
+  English input still gets processed, but the assembled context reads as
+  broken English (see the demo output above). Making this properly
+  bilingual means branching both on the input/output language, which
+  hasn't been built yet.
 
 ## License
 
