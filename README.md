@@ -104,7 +104,7 @@ embedder = SentenceTransformerProvider()         # 首次运行会下载 bge-m3
 
 # 1. 写入一条记忆：LLM 抽取三元组，增量合并进图谱
 ingestor = IncrementalIngestor(store, llm, policy=RuleBasedPolicy())
-result = ingestor.ingest("我在中科院做后端开发，主要用 Python 和 Go。", source_id="demo")
+result = ingestor.ingest("我在中科院做AI研究，主要用 Python。", source_id="demo")
 print(f"新增实体 {result.new_entities} 个，新增关系 {result.new_relations} 条")
 
 # 2. 检索：query 匹配三元组 -> PPR 扩散 -> 拼装自然语言上下文
@@ -126,14 +126,17 @@ python demo.py
 
 ```
 新增实体 4 个，新增关系 2 条
-我在中科院做后端开发（记录于2026-09-04 22:36:00）。我主要用Go（记录于2026-09-04 22:36:00）。
+我在中科院做AI研究（记录于2026-09-04 22:36:00）。我主要用Python（记录于2026-09-04 22:36:00）。
 ```
 
-具体措辞、实体/关系数量取决于所用 LLM 的抽取结果，每次跑不完全一致（比如
-这里"Python 和 Go"只保留了"Go"，是抽取模型本身的取舍，不是代码 bug），
+具体措辞、实体/关系数量取决于所用 LLM 的抽取结果，每次跑不完全一致，
 但只要环境变量配对了，跑出非空结果就说明链路是通的。
 
 ## 快速开始：MCP Server（接入 Claude Desktop / Cursor）
+
+这个 MCP Server 在 Claude Desktop / Cursor 里显示的名字是 **Spomory**
+（由客户端配置文件 `mcpServers` 下的键名决定，见下方文档）；Python 包名/
+CLI 命令仍然是 `memory-core` / `memory-core-mcp`，两者是独立的。
 
 装好 `mcp` 依赖组、设置好 `LLM_API_KEY` 等环境变量后：
 
@@ -163,21 +166,22 @@ pytest -m "not slow"      # 跳过需要下载模型/训练的测试，几秒内
 
 ## 文档索引
 
-| 文档 | 内容 |
-|---|---|
-| [mcp_quickstart.md](docs/mcp_quickstart.md) | MCP Server 安装、配置、接入 Claude Desktop/Cursor、真实踩坑记录 |
-| [graph_store_interface.md](docs/graph_store_interface.md) | 存储适配器接口设计说明 |
-| [export_format.md](docs/export_format.md) | "记忆护照"导出格式 |
-| [dataset_format.md](docs/dataset_format.md) | GRPO 训练数据格式与真实数据集生成过程 |
-| [methodology.md](docs/methodology.md) | 技术方法论：已验证结论 vs 尚待验证的部分 |
-| [benchmark_smoke_test.md](docs/benchmark_smoke_test.md) | LoCoMo 真实跑分结果与失败案例分析 |
-| [memory_manager_eval.md](docs/memory_manager_eval.md) | 规则式 vs GRPO 训练后策略对比，含调试过程 |
-| [multimodal_verification.md](docs/multimodal_verification.md) | 图片 + CLIP 二次校验实验结果 |
-| [gpu_training_runbook.md](docs/gpu_training_runbook.md) | GPU 训练环境部署记录（含真实踩过的坑） |
-| [postgres_setup.md](docs/postgres_setup.md) | 云端 Postgres 后端部署记录 |
-| [leaderboard_submission.md](docs/leaderboard_submission.md) | 第三方评测榜单调研 |
-| [mvp_scope.md](docs/mvp_scope.md) | MVP 最小功能范围定义 |
-| [privacy_policy_draft.md](docs/privacy_policy_draft.md) / [product_copy_memory_passport.md](docs/product_copy_memory_passport.md) | 隐私政策草案 / 对外产品文案素材 |
+
+| 文档                                                                                                                              | 内容                                                            |
+| --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| [mcp_quickstart.md](docs/mcp_quickstart.md)                                                                                       | MCP Server 安装、配置、接入 Claude Desktop/Cursor、真实踩坑记录 |
+| [graph_store_interface.md](docs/graph_store_interface.md)                                                                         | 存储适配器接口设计说明                                          |
+| [export_format.md](docs/export_format.md)                                                                                         | "记忆护照"导出格式                                              |
+| [dataset_format.md](docs/dataset_format.md)                                                                                       | GRPO 训练数据格式与真实数据集生成过程                           |
+| [methodology.md](docs/methodology.md)                                                                                             | 技术方法论：已验证结论 vs 尚待验证的部分                        |
+| [benchmark_smoke_test.md](docs/benchmark_smoke_test.md)                                                                           | LoCoMo 真实跑分结果与失败案例分析                               |
+| [memory_manager_eval.md](docs/memory_manager_eval.md)                                                                             | 规则式 vs GRPO 训练后策略对比，含调试过程                       |
+| [multimodal_verification.md](docs/multimodal_verification.md)                                                                     | 图片 + CLIP 二次校验实验结果                                    |
+| [gpu_training_runbook.md](docs/gpu_training_runbook.md)                                                                           | GPU 训练环境部署记录（含真实踩过的坑）                          |
+| [postgres_setup.md](docs/postgres_setup.md)                                                                                       | 云端 Postgres 后端部署记录                                      |
+| [leaderboard_submission.md](docs/leaderboard_submission.md)                                                                       | 第三方评测榜单调研                                              |
+| [mvp_scope.md](docs/mvp_scope.md)                                                                                                 | MVP 最小功能范围定义                                            |
+| [privacy_policy_draft.md](docs/privacy_policy_draft.md) / [product_copy_memory_passport.md](docs/product_copy_memory_passport.md) | 隐私政策草案 / 对外产品文案素材                                 |
 
 ## 已知限制
 

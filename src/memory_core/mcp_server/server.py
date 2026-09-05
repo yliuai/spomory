@@ -39,7 +39,7 @@ def build_server(
     optional (Epic 9.3) — when given, add_memory/search_memory calls are
     logged for retention analysis.
     """
-    mcp = MCPServer("memory-core")
+    mcp = MCPServer("Spomory")
     ingestor = IncrementalIngestor(store, llm, policy=RuleBasedPolicy())
 
     @mcp.tool()

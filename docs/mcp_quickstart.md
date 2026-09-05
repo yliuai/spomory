@@ -1,9 +1,17 @@
 # MCP Server 快速开始
 
-对应 TASKS.md Epic 6.2-6.4。`memory-core` 的 MCP Server 暴露四个工具：
-`add_memory`、`search_memory`、`get_graph`、`export_memory`（见
-`src/memory_core/mcp_server/server.py`），默认用本地 `LocalGraphStore`
-（SQLite 文件 `memory_core.sqlite3`）。
+对应 TASKS.md Epic 6.2-6.4。这个 MCP Server 在 Claude Desktop / Cursor
+里显示的名字是 **Spomory**（`src/memory_core/mcp_server/server.py` 里
+`MCPServer("Spomory")`），暴露四个工具：`add_memory`、`search_memory`、
+`get_graph`、`export_memory`，默认用本地 `LocalGraphStore`（SQLite 文件
+`memory_core.sqlite3`）。
+
+> Python 包名、CLI 命令（`memory-core-mcp`）、代码里的模块名都还叫
+> `memory_core`，只有**注册到客户端的显示名字**改成了 Spomory——这两者是
+> 独立的：`command` 字段指向哪个可执行文件决定实际跑什么代码，
+> `mcpServers` 这个 JSON 对象里的键才是 Claude Desktop/Cursor 界面上显示、
+> 以及日志文件命名（`mcp-server-<键名>.log`）用的名字。改名时两处都要跟着
+> 改，否则日志文件名和显示名字对不上，排查问题时容易搞混。
 
 ## 安装
 
@@ -80,15 +88,18 @@ Claude Desktop 用上最新版本，重新跑一遍上面这条 `uv pip install`
 ### 配置
 
 在 `claude_desktop_config.json`（macOS 路径：
-`~/Library/Application Support/Claude/claude_desktop_config.json`；
-Cursor 用它的等价 MCP 配置文件）里加一段。`command` 写上面那个**非
-Documents 路径**虚拟环境里 `memory-core-mcp` 的绝对路径——Claude Desktop
-启动子进程时也不一定继承你终端的 `PATH`，绝对路径最不容易出问题：
+`~/Library/Application Support/Claude/claude_desktop_config.json`）里加
+一段。`mcpServers` 下面这个键（下例中的 `"Spomory"`）就是 Claude
+Desktop 界面上显示的名字，可以按自己喜好改，但**改了之后要连带把下面
+"排查方法"里提到的日志文件名一起换**，两者是绑定的。`command` 写上面
+那个**非 Documents 路径**虚拟环境里 `memory-core-mcp` 的绝对路径——注意
+这个可执行文件名不用跟着显示名字改，它是包安装时固定生成的入口——Claude
+Desktop 启动子进程时也不一定继承你终端的 `PATH`，绝对路径最不容易出问题：
 
 ```json
 {
   "mcpServers": {
-    "memory-core": {
+    "Spomory": {
       "command": "/Users/<you>/mcp-servers/memory-core-venv/bin/memory-core-mcp",
       "env": {
         "LLM_API_KEY": "...",
@@ -104,6 +115,15 @@ Documents 路径**虚拟环境里 `memory-core-mcp` 的绝对路径——Claude 
 设置），只在顶层加 `mcpServers` 这一个键，不要动其他内容——改之前建议
 先复制一份备份。改完配置后完全退出并重新打开 Claude Desktop 才会生效。
 
+### Cursor
+
+Cursor 用同样结构的 MCP 配置文件：全局配置在 `~/.cursor/mcp.json`，只想
+对单个项目生效则放在项目根目录的 `.cursor/mcp.json`。内容和上面 Claude
+Desktop 的 JSON 完全一样（同样是 `mcpServers.Spomory` 这个键决定 Cursor
+里显示的名字），改完重启 Cursor 生效。这部分**没有在真实 Cursor 环境里
+测试过**（开发/验证机器上没装 Cursor），只是基于 Cursor 官方 MCP 配置文档
+的结构类比得出，接入后建议按下面"验证步骤"再实测一遍确认。
+
 ### 数据文件存放位置
 
 本地 SQLite 数据文件（图谱数据 + 用量统计）默认存在 `~/.memory-core/`
@@ -114,23 +134,20 @@ Documents/Desktop/Downloads 下的普通目录，同样是为了避开上面那�
 
 **验证步骤**（照着做一遍，10 分钟内应该能跑通）：
 
-1. 打开 Claude Desktop，新建对话，确认输入框附近能看到 MCP 工具图标／
-   `memory-core` 已连接（没连上通常是 `command` 路径写错，或者环境变量里
-   `LLM_API_KEY` 没填）。
-2. **直接明确要求调用工具**，不要问"你调用了xxx吗"这种自省式问题——Claude
-   只会如实描述上一轮*已经*发生的事，你的问题本身不构成一次新的工具调用，
-   这样问永远会得到"没有调用"的答案，不代表连接有问题。正确的问法比如：
-   "请调用 memory-core 的 add_memory 工具，记住：我在某某公司做后端开发"。
-3. 开一个新对话（或者接着问）："请调用 memory-core 的 search_memory 工具，
-   查一下我在哪里工作"，确认能检索到第 2 步写入的内容。
+1. 打开 Claude Desktop，新建对话，确认输入框附近的 Connectors/MCP 工具
+   列表里能看到 `Spomory` 已连接（没连上通常是 `command` 路径写错，或者
+   环境变量里 `LLM_API_KEY` 没填）。
+2. 让 Claude 调用 `add_memory` 写入一句话，比如"请调用 Spomory 的
+   add_memory 工具，记住：我在某某公司做后端开发"。
+3. 开一个新对话（或者接着问），让 Claude 调用 `search_memory` 查"我在哪里
+   工作"，确认能检索到第 2 步写入的内容。
 4. 如果想验证云端后端（Epic 8.2），把 `env` 里加一条 `DATABASE_URL`
    指向 Postgres，重启 Claude Desktop，重复第 2-3 步，确认行为一致。
 
 **排查方法**：如果 Claude Desktop 提示 "Server disconnected"，真实的报错
-（不是那句笼统的断连提示）在 `~/Library/Logs/Claude/mcp-server-memory-core.log`
-里——先看这个文件，上面那个 TCC 权限问题就是从这里诊断出来的。判断一次
-调用是否真的发生了，也认这个日志文件里有没有 `method="tools/call"` 这一行
-最准，不要只听 Claude 自己怎么说。
+（不是那句笼统的断连提示）在 `~/Library/Logs/Claude/mcp-server-Spomory.log`
+里（文件名跟着 `mcpServers` 里的键名走，改了显示名字后日志文件名也会跟
+着变）——先看这个文件，上面那个 TCC 权限问题就是从这里诊断出来的。
 
 ## 验证状态
 
@@ -139,12 +156,9 @@ Documents/Desktop/Downloads 下的普通目录，同样是为了避开上面那�
   的检索/写入逻辑复用了已经用真实 LLM+embedding 验证过的 Epic 1/2 pipeline
   （见 `tests/test_e2e_real_llm.py`），存储后端在本地 SQLite 和云端 Postgres
   之间的切换也做了功能对等性验证（`tests/test_postgres_mcp_parity.py`）。
-- **Epic 6.2 要求的"连接 Claude Desktop/Cursor 做真实端到端验证"**：**已完成
-  真实验证**。在真实 Claude Desktop 里调用了 `add_memory`（`mcp-server-memory-core.log`
-  里能看到 `method="tools/call"` 请求，服务端真实调用了 DeepSeek API 抽取
-  三元组并返回 200 OK；独立直接查询 `~/.memory-core/memory_core.sqlite3`
-  确认数据真实落盘，不是只信任 API 调用"看起来成功"）和 `search_memory`
-  （日志里能看到真实的 embedding batch 编码过程，返回检索结果）。过程中
-  真实踩到并修复了上面记录的 macOS TCC 权限问题——第一次尝试时因为
-  MCP Server 装在 `~/Documents` 下被拒绝访问，报 "Server disconnected"，
-  排查日志定位到具体的 `PermissionError` 之后才修复。
+- **Epic 6.2 要求的"连接 Claude Desktop/Cursor 做真实端到端验证"**：已在
+  真实 Claude Desktop 里跑通，包括改名为 Spomory 之后的回归验证——
+  `mcp-server-Spomory.log` 里能看到真实的 `tools/call`，DB
+  （`~/.memory-core/memory_core.sqlite3`）里能看到 `add_memory` 真实写入
+  的新关系，紧接着的 `search_memory` 调用也正常触发了 embedding 检索。
+  Cursor 未在本机测试过（未安装），接入步骤见上面"Cursor"一节。
