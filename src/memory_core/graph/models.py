@@ -59,3 +59,11 @@ class Relation(BaseModel):
     provenance: list[Provenance] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
+    last_retrieved_at: datetime | None = Field(
+        default=None,
+        description=(
+            "Epic 11.4: when this relation was last shown in a search_memory "
+            "result, so ranking can passively downweight memories that have "
+            "gone a long time without being useful. None until the first hit."
+        ),
+    )

@@ -21,6 +21,16 @@ a local `LocalGraphStore` (SQLite file `memory_core.sqlite3`).
 > log filename and the displayed name will stop matching, which makes
 > debugging confusing.
 
+## Tools
+
+| Tool | Parameters | What it does |
+|---|---|---|
+| `add_memory` | `text`, `source_id="mcp-session"` | Extracts facts (entities + relations) from a piece of text and writes them into the memory graph; returns counts of new/merged entities and new relations |
+| `search_memory` | `query`, `top_k=10` | Matches the query against stored triples, expands/ranks via Personalized PageRank over the graph, and assembles the result into a natural-language context |
+| `forget_memory` | `query` | Finds the **single** relation that best matches the query and physically deletes it; if either endpoint entity is left with no relations, it's cleaned up too, and the deletion is written to the audit log. Deleting only one match at a time is a deliberate, conservative choice — a query vague enough to match several facts should be narrowed and retried rather than risk deleting the wrong ones silently |
+| `get_graph` | `entity_name`, `hops=1` | Returns the subgraph around an entity within the given number of hops, as JSON (`entities` + `relations`) |
+| `export_memory` | `subject_id="default"` | Exports the entire memory graph as a JSON "memory passport" — the data-ownership guarantee this server is built around |
+
 ## Install
 
 ```bash
@@ -154,6 +164,20 @@ Documents/Desktop/Downloads, again to avoid the TCC restriction above,
 rather than relying on the process's working directory at startup (a
 GUI app spawning a subprocess often gives it an unpredictable cwd).
 
+**Encrypted at rest by default (Epic 11.2)**: every entity/relation stored
+in `memory_core.sqlite3` is ciphertext, not plaintext — the first startup
+generates an `encryption.key` (mode 600) alongside it automatically, and
+every later startup reuses that same key. The key lives right next to the
+database rather than in a secrets manager — for a single-user local tool,
+the threat model is "someone gets the db file/a backup of it," not "this
+whole machine is compromised" (in which case where the key lives wouldn't
+matter anyway). **Upgrading from a version before encryption existed**:
+the first startup on the new version detects the old plaintext database
+and migrates it in place automatically — the original file is backed up
+to `memory_core.sqlite3.pre-encryption-backup` first (not deleted
+automatically; safe to remove once you've confirmed the new database
+looks right). No data loss, no manual steps required.
+
 **Verification steps** (walk through these; should take under 10 minutes):
 
 1. Open Claude Desktop, start a new conversation, and confirm the
@@ -179,6 +203,188 @@ actual error (not that generic message) is in
 whatever key you used under `mcpServers`, so it changes if you rename the
 display name) — check this file first; that's exactly how the TCC
 permission issue above was diagnosed.
+
+## Remote access (API key, Epic 11.5, optional)
+
+Everything above is the local stdio server — no registration needed, data
+stays on your machine, still the default recommended way to connect. If you
+don't want to run a Python environment locally at all (e.g. connecting from
+Claude's web app, or getting listed on a marketplace like China's ModelScope
+MCP directory that only accepts a reachable HTTPS endpoint),
+`src/memory_core/mcp_server/remote.py` + `src/cloud_api/` provide a second,
+API-key-authenticated remote path. Same five tools, same behavior; the
+differences are:
+
+- Each user's memories live in a shared Postgres database, isolated per
+  `user_id` (`PostgresGraphStore(dsn, user_id)`), not a local SQLite file.
+- Authentication is an API key (`x-api-key` header), not full OAuth — enough
+  for a platform like ModelScope/Doubao/Coze that just requires a reachable
+  HTTPS endpoint, but not enough to meet Anthropic's official Connector
+  Directory requirements (OAuth 2.1 + PKCE).
+
+### Deploy
+
+```bash
+uv pip install "memory-core[llm,embedding,mcp,cloud] @ git+https://github.com/yliuai/spomory.git"
+
+export DATABASE_URL=postgresql://user:pass@host:5432/dbname   # required, no local-SQLite fallback
+export LLM_API_KEY=...
+export MCP_ALLOWED_HOSTS=memory.example.com,memory.example.com:443  # required, see the security note below
+export PORT=8000  # optional, defaults to 8000
+
+memory-core-mcp-remote
+```
+
+**`MCP_ALLOWED_HOSTS` must be set to the real public hostname(s) this
+deploys behind** (comma-separated, `host:*` wildcards a port): this is the
+MCP SDK's built-in DNS-rebinding protection, which checks the request's
+`Host` header and returns 421 for anything not on the allowlist. Leaving it
+unset doesn't mean "allow everything" — it means every request is rejected
+by default (fail closed rather than leave an implicit allow-all-hosts back
+door); this was verified with a local smoke test using a fake `Host` header
+(see "Verification status" below).
+
+### Use it
+
+```bash
+curl -X POST https://memory.example.com/users/register \
+  -H "Content-Type: application/json" -d '{"email": "you@example.com"}'
+# the api_key in the response (starts with mck_) is only ever shown once -- save it
+```
+
+Configure a remote MCP connection in Claude Desktop/Cursor (exact JSON shape
+per that client's current docs): `url` is `https://memory.example.com/mcp-apikey`,
+with an `x-api-key: <the key from above>` header.
+
+### Not part of this path
+
+- Origin header validation (another Anthropic Connector Directory
+  requirement, handled separately from OAuth — see the next section for
+  what's in scope there).
+- Actually exposing this to the public internet — domain, TLS, firewall —
+  those are deployment decisions you make; this only provides the code and
+  local verification.
+- Two-way sync between local and cloud memories — the local stdio server and
+  this remote server are currently two independent distribution channels
+  that don't share data.
+
+## OAuth 2.1 (for Anthropic's official Connector Directory)
+
+The API-key path above is enough for ModelScope-style platforms, but
+Anthropic's official Connector Directory requires OAuth 2.1 + PKCE and
+rejects plain API keys. This is a third, separate access path — a
+different mount (`/mcp-apikey` stays API-key, `/mcp` is OAuth-only) behind
+the same underlying memory graph (both resolve to the same `user_id`
+against the same Postgres store, not two separate datasets).
+
+**Why the API-key mount is the one named `/mcp-apikey`, not the OAuth
+one**: the OAuth mount is the one that actually gets submitted to
+Anthropic's directory and shows up in marketplace search/one-click-connect
+UI, and real Directory listings' Connector URLs conventionally end in
+`mcp` — so that name went to the one facing the marketplace. The API-key
+mount's URL only ever gets pasted by hand into a client's own config file;
+nobody discovers it through a listing, so it has no such naming pressure.
+
+**Why they can't share one mount**: once an `MCPServer` is configured
+with `auth_server_provider`, the `mcp` SDK wraps *every* request to that
+mount in `RequireAuthMiddleware` — anything without a valid
+`Authorization: Bearer` gets a 401 before it ever reaches tool code.
+Turning OAuth on for the same mount as the API-key path would break every
+existing `x-api-key`-only client (Cursor, ModelScope, `mcp-remote`), so
+OAuth gets its own mount instead.
+
+### `/mcp` is only the Connector URL (where tools get called) — not where authorization happens
+
+**`/mcp` is the URL an MCP client connects to and actually calls
+`add_memory`/`search_memory` on** (the OAuth "resource server"). The
+authorization flow itself — `/authorize`, `/token`, `/register`,
+`/.well-known/oauth-authorization-server` — lives **at the domain root**,
+not under `/mcp` (e.g. `https://api.example.com/authorize`, not
+`https://api.example.com/mcp/authorize`).
+
+This isn't arbitrary: the `mcp` SDK builds those URLs by concatenating a
+fixed path onto `issuer_url` as a plain string
+(`mcp/server/auth/routes.py`: `str(issuer_url).rstrip("/") + "/authorize"`
+and similar) — it has no idea where the ASGI app implementing those routes
+actually gets mounted. This project's `issuer_url` has no path component
+(just the bare domain), so those endpoints have to be reachable at the
+root. **This was a real bug caught during development** (back when the
+OAuth mount's path was still called `/mcp-oauth`, before it got renamed to
+`/mcp` to match the "Connector URLs end in mcp" convention — the bug and
+the rename are two separate things): the first version mounted the entire
+OAuth-configured `MCPServer` under that prefix, which nested
+`/authorize`/`/token`/`.well-known` under it too — the metadata document
+advertised `https://host/authorize`, but that path only actually existed
+at `https://host/<prefix>/authorize`, so a real client following the
+metadata would 404. The fix mounts that ASGI app at the FastAPI root
+instead, using its own internal `streamable_http_path="/mcp"` to place the
+tool-calling endpoint at `/mcp` while `/authorize` etc. land correctly at
+the root. Regression coverage: `tests/test_oauth_mount_routing.py`
+(including a case verifying `/mcp-apikey` and `/mcp` coexist without
+either shadowing the other).
+
+**Login is an email magic link**: there's no password system in this
+project, so `/authorize` collects an email, sends a one-time link, and only
+generates the real OAuth authorization code once that link is clicked and
+redirects back to the connecting client. Sending goes through
+[Resend](https://resend.com) rather than raw SMTP from the VPS — a fresh
+cloud server's outbound IP has no sending reputation and gets blocklisted
+easily.
+
+**New environment variables** (on top of the existing `memory-core-mcp-remote`
+ones; leaving `OAUTH_ISSUER_URL` unset keeps the OAuth mount disabled
+entirely, so an existing API-key-only deployment is unaffected):
+
+```bash
+export OAUTH_ISSUER_URL=https://api.example.com          # required, the OAuth on-switch
+export OAUTH_RESOURCE_SERVER_URL=https://api.example.com/mcp  # optional, derived from issuer by default
+export RESEND_API_KEY=re_...    # from a Resend account you register — domain verification happens there too
+export EMAIL_FROM="Spomory <noreply@example.com>"
+```
+
+### Origin header validation + RFC 8707 resource (audience) validation
+
+Both of these got added later (`create_app`/`SpomoryOAuthProvider` gained
+`allowed_origins`/`resource_url` parameters):
+
+- **Origin validation**: reading Anthropic's own "Testing your connector"
+  docs turned up that this isn't actually a "must implement" item on the
+  review checklist — it instead shows up in their troubleshooting section
+  as a documented cause of `initialize` failures ("overly strict
+  Origin-header validation rejecting Anthropic's own requests"). Leaving
+  the allowlist empty means *any* request carrying an Origin header gets
+  rejected, which was exactly that overly-strict case. Fixed by adding a
+  `MCP_ALLOWED_ORIGINS` env var (defaults to `https://claude.ai`), allowing
+  only that one known-legitimate origin without weakening the check
+  against anything else; requests with no Origin header at all (most
+  non-browser MCP clients) are unaffected either way.
+- **RFC 8707 resource/audience validation**: `SpomoryOAuthProvider` gained
+  a `resource_url` parameter, and `load_access_token` now checks a token's
+  `resource` claim (when the client sent one) against this server's own
+  resource URL, using canonical-form comparison (`rstrip("/").lower()`)
+  rather than byte-for-byte — this stops a token minted for a different
+  service from being replayed here. A missing `resource` claim isn't
+  treated as a mismatch (the parameter is optional per the RFC), and a
+  refreshed token keeps the original resource claim. This work also
+  confirmed the RFC 9728 protected-resource metadata endpoint
+  (`/.well-known/oauth-protected-resource/mcp`) was already working
+  correctly.
+
+Regression coverage: `tests/test_oauth_store.py` (four resource/audience
+scenarios) and `tests/test_oauth_mount_routing.py`
+(`test_origin_allowlist_admits_the_configured_origin_and_rejects_others`).
+Writing that Origin test surfaced two test-design traps: the auxiliary
+routes (`.well-known/*`) aren't covered by `TransportSecuritySettings` at
+all — only the actual MCP resource endpoint (`/mcp`) is — and a request
+without a real valid Bearer token gets 401'd by `RequireAuthMiddleware`
+before Origin validation is ever reached, so testing Origin rejection
+requires minting a genuinely valid token via the real provider flow first.
+
+**Not part of this path yet**: actually
+submitting to Anthropic's developer portal for Connector review (an
+operational step, for once this has run through a real Claude Desktop
+browser authorization flow on the live deployment); password
+reset/full account management — a magic link is enough for login alone.
 
 ## Verification status
 
@@ -212,3 +418,101 @@ permission issue above was diagnosed.
   fully erase. Confirmed against both the database and the
   `memory_core_audit.sqlite3` audit entry
   (`{"entities_deleted": 1, "relations_deleted": 1}`).
+
+- **Remote access (Epic 11.5) — honest verification status**: the
+  `user_id`-isolation added to `PostgresGraphStore` and mounting the MCP
+  streamable-http endpoint in `cloud_api/app.py` have been verified for the
+  parts that don't require Postgres:
+  - A fake-request smoke test (`TestClient`, a local `LocalGraphStore`
+    rather than the real `PostgresGraphStore`) ran the full
+    `/users/register` → `/mcp` `initialize` handshake, surfacing and fixing
+    two real bugs along the way: (1) FastAPI/Starlette don't propagate
+    lifespan events into an `app.mount()`-ed sub-application by default, so
+    the MCP session manager never started and every tool call failed with
+    `RuntimeError: Task group is not initialized` — fixed by manually
+    entering the sub-app's `lifespan_context` inside `create_app`'s own
+    lifespan; (2) the MCP SDK's built-in DNS-rebinding protection rejects
+    every `Host` header by default, requiring the new `allowed_hosts`/
+    `MCP_ALLOWED_HOSTS` setting to connect at all. Both were found by
+    reproducing the failure and reading the SDK source, not guessed.
+  - The new cross-tenant isolation test in `tests/test_postgres_store.py`
+    and `tests/test_remote_mcp_server.py` (rejecting missing/invalid API
+    keys, two users not seeing each other's memories, usage/audit recorded
+    under the real resolved `user_id`) were written and pass.
+  - **2026-09 update: actually deployed to the public internet and
+    verified there.** A Tencent Cloud server (Ubuntu 24.04) running
+    postgresql 16 + nginx + systemd, domain proxied through Cloudflare. The
+    Postgres-dependent tests above now pass against that server's real
+    database, and `POST /users/register` / `POST /mcp/` (a real
+    `initialize` handshake) were both confirmed working over the real
+    public domain, not a loopback test. A real deployment bug surfaced and
+    got fixed along the way: Cloudflare's "Automatic SSL/TLS" mode probes
+    whether the origin supports 443, and the origin only had port 80 open
+    — the probe connection hung until timeout instead of falling back
+    cleanly; switching to Flexible mode fixed it. Not done yet: connecting
+    a real Claude Desktop/Cursor client (only curl-simulated MCP calls so
+    far), submitting to the ModelScope MCP marketplace.
+
+- **OAuth 2.1 — honest verification status**: every method of
+  `SpomoryOAuthProvider`'s Protocol (client registration, `authorize` ->
+  pending-request storage, authorization-code issuance and one-time
+  consumption, access/refresh token issuance/verification/rotation/revocation)
+  is tested directly in `tests/test_oauth_store.py`; the full
+  `/oauth/login` -> `/oauth/verify` magic-link HTTP flow passes in
+  `tests/test_oauth_login_flow.py` using a fake `EmailSender` (no real send
+  tested yet — no Resend account configured); resolving an OAuth token to a
+  `user_id` (the `get_access_token()` contextvar mechanism) is unit-tested
+  in `tests/test_remote_oauth_context.py`, and the full "real Postgres +
+  OAuth Bearer token calling add_memory/search_memory" path has been run
+  against the same live server's database in `tests/test_remote_mcp_server.py`.
+  A real routing bug got caught and fixed along the way, too — `/mcp-oauth`
+  originally mounted the entire OAuth-configured `MCPServer` under that
+  prefix, nesting `/authorize`/`/token`/`.well-known` under it as well, but
+  the SDK builds its metadata document's URLs from the path-less
+  `issuer_url` (e.g. `https://host/authorize`), which only actually existed
+  at `https://host/mcp-oauth/authorize` — a real client following the
+  metadata would 404. Local tests never caught this (they called Python
+  methods directly, never the real HTTP routes); it only surfaced when
+  asked point-blank whether `/mcp-oauth` was the actual Connector URL,
+  which prompted checking the real routing. Fixed, with dedicated
+  regression coverage in `tests/test_oauth_mount_routing.py` (four cases,
+  all hitting real HTTP paths rather than internal objects), re-verified
+  against the live server's real Postgres. Afterwards, the OAuth mount got
+  renamed from `/mcp-oauth` to `/mcp` (API-key moved to `/mcp-apikey`) to
+  match the real-world convention that Connector URLs end in `mcp` — added
+  a case verifying both mounts coexist without shadowing each other, also
+  re-verified against real Postgres.
+
+  **2026-09 update: actually deployed and walked through by hand end to
+  end.** A real Resend account got registered and `OAUTH_ISSUER_URL`/
+  `RESEND_API_KEY` configured in production, surfacing two more real bugs:
+  the login email's link was a relative path (email clients have no
+  "current page" to resolve it against, so it opened with "oauth" read as a
+  bare hostname), and `/oauth/verify`'s final redirect was built by naive
+  string concatenation, producing a malformed URL whenever the OAuth
+  client's own callback URL already carried its own query string (true of
+  MCP Inspector's). Both fixed — see `运维.md`'s full writeup. A fourth
+  issue surfaced after those fixes and turned out not to be our code at
+  all: MCP Inspector tracks the in-progress OAuth flow in
+  `sessionStorage`, which isn't shared across browser tabs, and clicking
+  the emailed link normally opens a new one — losing that tracking data.
+  That's an Inspector architecture limitation (a real Claude Desktop uses
+  an OS-level deep link back into the same running app, so this wouldn't
+  come up there); the workaround was pasting the link into the original
+  tab instead of opening it fresh. With that, a real connection went all
+  the way through: `add_memory`/`search_memory` both succeeded, the
+  written data was confirmed in production Postgres under the correct
+  `user_id`, and the test memory was cleaned up afterward.
+
+  **2026-09-06 update: Origin header validation and RFC 8707 audience
+  validation are done and deployed too.** See the "Origin header
+  validation + RFC 8707 resource (audience) validation" section above.
+  The production deployment also needed a real SQLite schema migration
+  (`oauth_access_tokens`/`oauth_refresh_tokens` gained a `resource`
+  column; the original file was backed up first), after which
+  `test_oauth_store.py`/`test_oauth_login_flow.py`/
+  `test_oauth_mount_routing.py`/`test_remote_oauth_context.py`/
+  `test_remote_mcp_server.py` were all re-run against the real production
+  Postgres (27 passed), alongside a full local test run (116 passed, 17
+  skipped) and a clean `ruff check`. **Not done yet**: actually
+  submitting to Anthropic's developer portal for review.

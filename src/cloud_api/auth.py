@@ -64,6 +64,18 @@ class AuthStore:
         self._conn.execute("INSERT INTO users (id, email) VALUES (?, ?)", (user_id, email))
         return self._issue_key(user_id)
 
+    def find_or_create_user(self, email: str) -> str:
+        """Idempotent lookup for the OAuth magic-link login: same email
+        always resolves to the same `user_id`, unlike `register_user` which
+        unconditionally creates a new user and issues a fresh API key."""
+        row = self._conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+        if row is not None:
+            return row[0]
+        user_id = str(uuid.uuid4())
+        self._conn.execute("INSERT INTO users (id, email) VALUES (?, ?)", (user_id, email))
+        self._conn.commit()
+        return user_id
+
     def _issue_key(self, user_id: str) -> IssuedKey:
         raw_key = f"mck_{secrets.token_urlsafe(32)}"
         api_key_id = str(uuid.uuid4())

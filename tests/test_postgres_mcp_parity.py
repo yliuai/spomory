@@ -25,7 +25,7 @@ def test_add_then_search_round_trips_through_postgres_backend():
     from tests.test_incremental import FakeLLMProvider
     from tests.test_mcp_server import FakeEmbeddingProvider
 
-    store = PostgresGraphStore(DATABASE_URL)
+    store = PostgresGraphStore(DATABASE_URL, user_id="parity-test-user")
     store._conn.execute("TRUNCATE entities, relations")
 
     llm = FakeLLMProvider(

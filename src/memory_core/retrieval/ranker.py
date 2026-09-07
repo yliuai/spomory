@@ -2,7 +2,66 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from memory_core.graph.models import Entity, Relation
+
+# Epic 11.4: passive complement to the RL memory manager's active ADD/UPDATE/
+# DELETE/NOOP decisions, which have no notion of "hasn't been useful in
+# months, quietly rank it lower." Chosen so a relation unretrieved for this
+# long picks up a full extra rank-position's worth of penalty -- noticeable
+# but not enough to bury a memory that's still clearly more relevant.
+_STALENESS_HALF_LIFE_DAYS = 30.0
+
+
+def _staleness_penalty(relation: Relation, now: datetime) -> float:
+    """Days since `relation` was last shown in a search result, scaled by
+    the half-life above. Falls back to `created_at` when `last_retrieved_at`
+    is still `None` (never yet retrieved) so a brand-new fact isn't treated
+    as maximally stale just because it hasn't had a chance to be queried."""
+    reference = relation.last_retrieved_at or relation.created_at
+    days_stale = max((now - reference).total_seconds() / 86400, 0.0)
+    return days_stale / _STALENESS_HALF_LIFE_DAYS
+
+
+def relation_relevance_score(
+    relation: Relation, rank_position: dict[str, int], now: datetime | None = None
+) -> float:
+    """Lower is more relevant. Combines the PPR-derived rank of both
+    endpoints (sum, not min: when relations share one highly-ranked
+    endpoint, this still orders them by how relevant their *other* endpoint
+    is, instead of leaving them all tied) with Epic 11.4's staleness
+    penalty, so two relations tied on rank are broken by which one has
+    actually been useful more recently.
+    """
+    base = rank_position.get(relation.subject_id, len(rank_position)) + rank_position.get(
+        relation.object_id, len(rank_position)
+    )
+    return base + _staleness_penalty(relation, now or datetime.now(UTC))
+
+
+def select_relevant_relations(
+    relations: list[Relation],
+    entities_by_id: dict[str, Entity],
+    ranked_entity_ids: list[str],
+    top_k: int = 20,
+    now: datetime | None = None,
+) -> list[Relation]:
+    """The subset of `relations` `build_context` would render, in the same
+    order -- factored out so a caller (e.g. `search_memory`) can record which
+    relations were actually shown a memory-retrieval hit without
+    re-deriving this selection by hand."""
+    rank_position = {entity_id: i for i, entity_id in enumerate(ranked_entity_ids)}
+    relevant = [
+        r
+        for r in relations
+        if r.subject_id in rank_position or r.object_id in rank_position
+    ]
+
+    now = now or datetime.now(UTC)
+    relevant.sort(key=lambda r: relation_relevance_score(r, rank_position, now))
+    top_entities = set(ranked_entity_ids[:top_k])
+    return [r for r in relevant if r.subject_id in top_entities or r.object_id in top_entities]
 
 _CJK_RANGES = (
     (0x4E00, 0x9FFF),  # CJK Unified Ideographs
@@ -61,30 +120,11 @@ def build_context(
 ) -> str:
     """Render the relations touching the top-``top_k`` ranked entities as prose.
 
-    Relations are ordered by how highly their more-relevant endpoint ranked,
+    Relations are ordered by how highly their more-relevant endpoint ranked
+    (Epic 11.4: with ties broken by staleness -- see `select_relevant_relations`),
     so the resulting context reads roughly most-to-least relevant.
     """
-    rank_position = {entity_id: i for i, entity_id in enumerate(ranked_entity_ids)}
-    relevant = [
-        r
-        for r in relations
-        if r.subject_id in rank_position or r.object_id in rank_position
-    ]
-
-    def relevance(relation: Relation) -> int:
-        # Sum (not min) of both endpoints' ranks: when relations share one
-        # highly-ranked endpoint (e.g. all touch the query's anchor entity),
-        # this still orders them by how relevant their *other* endpoint is,
-        # instead of leaving them all tied.
-        return rank_position.get(relation.subject_id, len(rank_position)) + rank_position.get(
-            relation.object_id, len(rank_position)
-        )
-
-    relevant.sort(key=relevance)
-    top_entities = set(ranked_entity_ids[:top_k])
-    selected = [
-        r for r in relevant if r.subject_id in top_entities or r.object_id in top_entities
-    ]
+    selected = select_relevant_relations(relations, entities_by_id, ranked_entity_ids, top_k)
 
     seen: set[str] = set()
     sentences: list[str] = []

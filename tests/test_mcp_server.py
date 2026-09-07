@@ -51,6 +51,27 @@ def test_add_memory_records_usage_when_tracker_given():
     assert tracker.active_users_since(7) == 1
 
 
+def test_search_memory_records_a_retrieval_hit_on_the_matched_relation():
+    """Epic 11.4: search_memory is the only place a relation's
+    last_retrieved_at can get bumped, since that's what makes the passive
+    staleness signal in ranker.py meaningful over time."""
+    from memory_core.graph.models import Entity, Relation
+
+    store = LocalGraphStore(":memory:")
+    zhangsan = Entity(name="张三", type="person")
+    company = Entity(name="某公司", type="organization")
+    store.add_entities([zhangsan, company])
+    relation = Relation(subject_id=zhangsan.id, predicate="任职于", object_id=company.id)
+    store.add_relations([relation])
+    assert relation.last_retrieved_at is None
+
+    server = build_server(store, FakeLLMProvider([]), FakeEmbeddingProvider())
+    asyncio.run(server.call_tool("search_memory", {"query": "张三 任职于 某公司"}))
+
+    updated = next(r for r in store.all_relations() if r.id == relation.id)
+    assert updated.last_retrieved_at is not None
+
+
 def test_forget_memory_deletes_matched_relation_and_orphaned_entities():
     """Regression coverage for the gap the competitive analysis flagged:
     export_memory's "true delete" (Epic 7.3) existed at the storage layer

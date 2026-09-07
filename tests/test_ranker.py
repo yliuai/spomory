@@ -1,7 +1,11 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from memory_core.graph.models import Entity, Relation
-from memory_core.retrieval.ranker import build_context
+from memory_core.retrieval.ranker import (
+    build_context,
+    relation_relevance_score,
+    select_relevant_relations,
+)
 
 
 def test_build_context_surfaces_created_at_so_when_questions_are_answerable():
@@ -86,3 +90,58 @@ def test_build_context_dedupes_and_ignores_out_of_scope_relations():
     context = build_context(relations, entities_by_id, ranked_entity_ids=[a.id, b.id], top_k=2)
     assert context.startswith("甲连乙")
     assert context.count("甲连乙") == 1  # deduped, not appearing twice
+
+
+def test_relation_relevance_score_penalizes_long_unretrieved_relations():
+    """Epic 11.4: a passive decay signal alongside the RL memory manager's
+    active ADD/UPDATE/DELETE/NOOP decisions, which have no notion of "this
+    hasn't been useful in months, quietly rank it lower." Two relations tied
+    on PPR rank should score differently once one of them has gone a long
+    time without a retrieval hit."""
+    a, b = Entity(name="甲", type="thing"), Entity(name="乙", type="thing")
+    now = datetime(2026, 6, 1, tzinfo=UTC)
+    rank_position = {a.id: 0, b.id: 0}  # tied rank -- only staleness should differ
+
+    fresh = Relation(
+        subject_id=a.id, predicate="连", object_id=b.id, last_retrieved_at=now - timedelta(days=1)
+    )
+    stale = Relation(
+        subject_id=a.id,
+        predicate="连",
+        object_id=b.id,
+        last_retrieved_at=now - timedelta(days=365),
+    )
+    never_hit_but_new = Relation(
+        subject_id=a.id, predicate="连", object_id=b.id, created_at=now - timedelta(days=1)
+    )
+
+    fresh_score = relation_relevance_score(fresh, rank_position, now=now)
+    stale_score = relation_relevance_score(stale, rank_position, now=now)
+    new_score = relation_relevance_score(never_hit_but_new, rank_position, now=now)
+
+    assert fresh_score < stale_score  # observable drop in relevance for the stale one
+    assert new_score < stale_score  # never-yet-queried isn't treated as maximally stale
+
+
+def test_select_relevant_relations_ranks_recently_hit_memory_above_long_stale_one():
+    a, b = Entity(name="甲", type="thing"), Entity(name="乙", type="thing")
+    entities_by_id = {a.id: a, b.id: b}
+    now = datetime(2026, 6, 1, tzinfo=UTC)
+
+    recent = Relation(
+        subject_id=a.id, predicate="记得A", object_id=b.id, last_retrieved_at=now - timedelta(days=1)
+    )
+    stale = Relation(
+        subject_id=a.id,
+        predicate="记得B",
+        object_id=b.id,
+        last_retrieved_at=now - timedelta(days=400),
+    )
+
+    # Both relations connect the same (a, b) pair, so they're tied on PPR
+    # rank -- only the staleness signal should decide their order.
+    selected = select_relevant_relations(
+        [stale, recent], entities_by_id, ranked_entity_ids=[a.id, b.id], top_k=2, now=now
+    )
+
+    assert selected == [recent, stale]

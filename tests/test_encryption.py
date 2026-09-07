@@ -59,3 +59,53 @@ def test_unencrypted_store_is_unaffected():
     store = LocalGraphStore(":memory:")
     store.add_entities([Entity(name="a", type="thing")])
     assert store.all_entities()[0].name == "a"
+
+
+def test_migrate_plaintext_to_encrypted_rewrites_rows_and_keeps_a_backup(tmp_path):
+    from memory_core.graph.local_store import migrate_plaintext_to_encrypted
+
+    db_path = tmp_path / "g.sqlite3"
+    plain = LocalGraphStore(db_path)
+    a, b = Entity(name="张三", type="person"), Entity(name="李四", type="person")
+    plain.add_entities([a, b])
+    plain.add_relations([Relation(subject_id=a.id, predicate="认识", object_id=b.id)])
+    plain._conn.close()
+
+    key = Fernet.generate_key()
+    assert migrate_plaintext_to_encrypted(db_path, key) is True
+
+    backup_path = db_path.with_suffix(db_path.suffix + ".pre-encryption-backup")
+    assert backup_path.exists()
+
+    conn = sqlite3.connect(db_path)
+    raw = conn.execute("SELECT data FROM entities WHERE id = ?", (a.id,)).fetchone()[0]
+    conn.close()
+    assert "张三" not in raw
+
+    reopened = LocalGraphStore(db_path, encryption_key=key)
+    assert {e.name for e in reopened.all_entities()} == {"张三", "李四"}
+    assert len(reopened.all_relations()) == 1
+
+
+def test_migrate_plaintext_to_encrypted_is_a_noop_on_missing_or_empty_or_already_encrypted_db(
+    tmp_path,
+):
+    from memory_core.graph.local_store import migrate_plaintext_to_encrypted
+
+    key = Fernet.generate_key()
+
+    # no file yet
+    assert migrate_plaintext_to_encrypted(tmp_path / "missing.sqlite3", key) is False
+
+    # file exists, schema created, but no rows written
+    empty_path = tmp_path / "empty.sqlite3"
+    LocalGraphStore(empty_path)._conn.close()
+    assert migrate_plaintext_to_encrypted(empty_path, key) is False
+
+    # already encrypted -- calling it again must not double-encrypt or crash
+    encrypted_path = tmp_path / "already.sqlite3"
+    store = LocalGraphStore(encrypted_path, encryption_key=key)
+    store.add_entities([Entity(name="a", type="thing")])
+    store._conn.close()
+    assert migrate_plaintext_to_encrypted(encrypted_path, key) is False
+    assert LocalGraphStore(encrypted_path, encryption_key=key).all_entities()[0].name == "a"

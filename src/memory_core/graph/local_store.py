@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -182,3 +183,59 @@ class LocalGraphStore(GraphStoreBase):
 
     def all_relations(self) -> list[Relation]:
         return [data["relation"] for _, _, data in self._graph.edges(data=True)]
+
+
+def migrate_plaintext_to_encrypted(db_path: str | Path, encryption_key: bytes) -> bool:
+    """Epic 11.2: one-time upgrade for a database that predates encryption
+    being on by default. Safe to call on every startup before opening the
+    real store -- it's a no-op (returns `False`) when there's nothing to do:
+    the file doesn't exist yet, has no rows, or is already encrypted
+    (detected by peeking at one raw row rather than by remembering install
+    history anywhere -- a plaintext row is valid JSON, a Fernet-encrypted
+    one never parses as JSON).
+
+    When migration *is* needed, the original file is copied to
+    `<db_path>.pre-encryption-backup` first (left in place afterwards, not
+    cleaned up) before every row is read out and rewritten through a freshly
+    encrypted store, so a mistake here doesn't cost the only copy of
+    someone's memory graph.
+    """
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return False
+
+    raw_conn = sqlite3.connect(str(db_path))
+    try:
+        row = raw_conn.execute("SELECT data FROM entities LIMIT 1").fetchone()
+        if row is None:
+            row = raw_conn.execute("SELECT data FROM relations LIMIT 1").fetchone()
+    except sqlite3.OperationalError:
+        row = None  # schema not created yet -- nothing written, nothing to migrate
+    finally:
+        raw_conn.close()
+    if row is None:
+        return False
+
+    try:
+        json.loads(row[0])
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return False  # doesn't parse as plaintext JSON -- already encrypted
+
+    backup_path = db_path.with_suffix(db_path.suffix + ".pre-encryption-backup")
+    if backup_path.exists():
+        raise FileExistsError(
+            f"{backup_path} already exists from a previous migration attempt -- "
+            "resolve that first rather than risk overwriting it"
+        )
+    shutil.copy2(db_path, backup_path)
+
+    plain_store = LocalGraphStore(db_path)
+    entities, relations = plain_store.all_entities(), plain_store.all_relations()
+    plain_store._conn.close()
+
+    db_path.unlink()
+    encrypted_store = LocalGraphStore(db_path, encryption_key=encryption_key)
+    encrypted_store.add_entities(entities)
+    encrypted_store.add_relations(relations)
+    encrypted_store._conn.close()
+    return True

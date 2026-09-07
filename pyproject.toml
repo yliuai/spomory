@@ -29,6 +29,8 @@ cloud = [
     "stripe>=9.0",
     "cryptography>=42",
     "psycopg[binary]>=3.1",
+    "python-multipart>=0.0.9",
+    "resend>=2.0",
 ]
 mcp = [
     "mcp>=2.0",
@@ -46,6 +48,7 @@ dev = [
 
 [project.scripts]
 memory-core-mcp = "memory_core.mcp_server.__main__:main"
+memory-core-mcp-remote = "cloud_api.remote_main:main"
 
 [build-system]
 requires = ["hatchling"]
