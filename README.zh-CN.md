@@ -180,6 +180,37 @@ memory-core-mcp   # 启动后常驻，作为 stdio MCP server 等待客户端连
 完整数据、按问题类型的拆解、以及定位这个问题用的新旧抽取结果对比，都在
 [`docs/benchmark_smoke_test.md`](docs/benchmark_smoke_test.md)。
 
+**LongMemEval（`xiaowu0162/longmemeval-cleaned` oracle 版本，500 条问题里的
+前 10 条）**：
+
+| 指标 | 数值 |
+|---|---|
+| Recall@10 | 100%（10/10） |
+| Accuracy — 严格子串匹配 | 30% |
+| Accuracy — LLM 语义评判 | 80% |
+
+如实说明这个数字的局限，不只报好看的一面：
+1. **只测了 10 条，不是全部 500 条**——数据集里每条问题平均要摄入约 27
+   轮对话（约等于 27 次真实抽取调用+1次生成+1次评判），这台环境到 LLM
+   API 的代理网络延迟下，全量跑需要数十小时，这次只跑了一个小样本，不
+   代表能推广到全量数据集。
+2. **这 10 条恰好全部是 `temporal-reasoning`（时间推理）类型**——数据集
+   里还有 `multi-session` 类型，`load_longmemeval(limit=10)` 是按文件里
+   的原始顺序取前 10 条，没有做分层抽样，样本对整个数据集不具代表性。
+3. **Recall@10=100% 很大程度上是"oracle 版本"本身的设计导致的，不是
+   检索能力有多强**——oracle 版本已经把每条问题的 haystack 预先筛选成
+   只含相关 session（不含干扰性 session），这比真实产品场景（一个装满
+   几百上千轮无关对话的记忆库）容易得多，跟"完整版 LongMemEval"（含
+   全部干扰 session）的分数不是一回事，不能直接拿这个 100% 去跟别的
+   产品在完整版上跑出的数字比较。
+4. Accuracy 严格匹配（30%）远低于 LLM 语义评判（80%），跟 LoCoMo 那边
+   看到的模式一致：子串匹配对措辞不同但语义正确的答案系统性低估。
+
+原始数据见
+[`benchmarks/results/longmemeval_oracle_subset.json`](benchmarks/results/longmemeval_oracle_subset.json)，
+复跑脚本是
+[`benchmarks/run_longmemeval_subset.py`](benchmarks/run_longmemeval_subset.py)。
+
 ## 测试
 
 ```bash

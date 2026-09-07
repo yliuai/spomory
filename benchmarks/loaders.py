@@ -25,7 +25,7 @@ class QAPair:
     question: str
     answer: str
     evidence_turn_ids: list[str]
-    category: int | None = None
+    category: int | str | None = None  # LoCoMo uses an int (1-5); LongMemEval a string question_type
 
 
 @dataclass
@@ -73,7 +73,7 @@ def load_longmemeval(path: Path | None = None, limit: int | None = None) -> list
                 question=sample["question"],
                 answer=sample["answer"],
                 evidence_turn_ids=evidence_turn_ids,
-                category=None,
+                category=sample.get("question_type"),
             )
         ]
         conversations.append(

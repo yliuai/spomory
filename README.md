@@ -208,6 +208,44 @@ out of the fixed top-10 retrieval window. Full numbers, per-category
 breakdown, and the side-by-side extraction comparison that found this are
 in [`docs/benchmark_smoke_test.md`](docs/benchmark_smoke_test.md).
 
+**LongMemEval** (`xiaowu0162/longmemeval-cleaned` oracle variant, first 10
+of 500 questions):
+
+| Metric | Value |
+|---|---|
+| Recall@10 | 100% (10/10) |
+| Accuracy — strict substring match | 30% |
+| Accuracy — LLM-judged | 80% |
+
+The limitations here matter as much as the numbers:
+1. **Only 10 questions, not the full 500** — each question ingests ~27
+   turns on average (~27 real extraction calls plus one generation and one
+   judge call), and this environment's LLM API calls go through a proxy
+   with real latency; the full dataset would take tens of hours. This is a
+   real run, not a mock, but it's a small sample and shouldn't be read as
+   generalizing to the full dataset.
+2. **All 10 happen to be `temporal-reasoning` type** — the dataset also has
+   a `multi-session` type; `load_longmemeval(limit=10)` takes the first 10
+   entries in file order with no stratified sampling, so this sample isn't
+   representative of the dataset as a whole.
+3. **Recall@10 = 100% is largely an artifact of the oracle variant's
+   design, not a strong retrieval claim** — the oracle variant pre-filters
+   each question's haystack down to only the relevant sessions (no
+   distractor sessions), which is considerably easier than a real
+   deployment's memory store (hundreds/thousands of unrelated turns). This
+   isn't the same task as the full (non-oracle) LongMemEval benchmark and
+   shouldn't be compared directly against numbers other products report on
+   that harder variant.
+4. Strict-match accuracy (30%) is far below LLM-judged accuracy (80%),
+   consistent with the same pattern seen in the LoCoMo results — substring
+   matching systematically undercounts answers that are correct but worded
+   differently.
+
+Raw data:
+[`benchmarks/results/longmemeval_oracle_subset.json`](benchmarks/results/longmemeval_oracle_subset.json);
+the run script is
+[`benchmarks/run_longmemeval_subset.py`](benchmarks/run_longmemeval_subset.py).
+
 ## Testing
 
 ```bash
