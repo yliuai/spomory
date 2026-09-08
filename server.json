@@ -1,0 +1,23 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.lyf-wxy/spomory",
+  "description": "Explainable graph-retrieval memory engine with an RL-trained management policy.",
+  "repository": {
+    "url": "https://github.com/yliuai/spomory",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.yliuai.com/mcp"
+    },
+    {
+      "type": "streamable-http",
+      "url": "https://api.yliuai.com/mcp-apikey",
+      "headers": [
+        { "name": "x-api-key", "description": "API key from POST /users/register", "isRequired": true, "isSecret": true }
+      ]
+    }
+  ]
+}
