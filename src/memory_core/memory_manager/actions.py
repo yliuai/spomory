@@ -48,8 +48,17 @@ def apply_action(action: MemoryAction, store: GraphStoreBase) -> None:
         relation = _find_relation(store, action.target_id)
         # updated_at must actually change on an update, or a stale-but-corrected
         # fact keeps reporting its original creation time forever.
-        updates_with_timestamp = {**action.updates, "updated_at": datetime.now(UTC)}
+        now = datetime.now(UTC)
+        updates_with_timestamp = {**action.updates, "updated_at": now, "valid_from": now}
         updated = relation.model_copy(update=updates_with_timestamp)
+        # Epic 11.7: snapshot the pre-update value into transaction-time
+        # history *before* overwriting it, so `relation_as_of()` can still
+        # answer "what did the system believe before this correction" --
+        # archiving belongs here (not inside `add_relations`) because this
+        # is the one call site that actually means "this fact changed", as
+        # opposed to a fresh ADD or a data-migration replay of unchanged
+        # content through the same upsert primitive.
+        store.archive_relation_version(relation, superseded_at=now)
         store.add_relations([updated])
 
     elif action.action_type is ActionType.DELETE:

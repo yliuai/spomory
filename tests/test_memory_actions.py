@@ -61,6 +61,27 @@ def test_update_action_refreshes_updated_at_but_not_created_at(tmp_path):
     assert updated.updated_at > original_time  # when it was last changed -- must move
 
 
+def test_update_action_archives_the_pre_update_value(tmp_path):
+    # Epic 11.7: apply_action's UPDATE branch is the one place that should
+    # actually create bitemporal history -- verifies the full path (not
+    # just the store primitive graph_store_contract.py already covers).
+    store, _a, _b, relation = _store_with_one_relation(tmp_path)
+    before_update = datetime.now(UTC)
+
+    apply_action(
+        MemoryAction(ActionType.UPDATE, target_id=relation.id, updates={"confidence": 0.42}),
+        store,
+    )
+
+    as_of_before = store.relation_as_of(relation.id, before_update)
+    assert as_of_before is not None
+    assert as_of_before.confidence == relation.confidence  # the original, pre-update value
+
+    as_of_now = store.relation_as_of(relation.id, datetime.now(UTC))
+    assert as_of_now is not None
+    assert as_of_now.confidence == 0.42
+
+
 def test_delete_action_removes_relation_without_touching_entities(tmp_path):
     store, a, b, relation = _store_with_one_relation(tmp_path)
 

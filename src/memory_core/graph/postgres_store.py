@@ -8,6 +8,8 @@ Verified against a real PostgreSQL 10 instance via
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from .models import Entity, Relation
 from .store import GraphStoreBase
 
@@ -30,6 +32,14 @@ CREATE INDEX IF NOT EXISTS idx_relations_object ON relations(object_id);
 CREATE INDEX IF NOT EXISTS idx_entities_name ON entities(lower(name));
 CREATE INDEX IF NOT EXISTS idx_entities_user ON entities(user_id);
 CREATE INDEX IF NOT EXISTS idx_relations_user ON relations(user_id);
+CREATE TABLE IF NOT EXISTS relation_history (
+    relation_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    valid_from TIMESTAMPTZ NOT NULL,
+    valid_to TIMESTAMPTZ NOT NULL,
+    data JSONB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_relation_history_id ON relation_history(relation_id, user_id);
 """
 
 
@@ -163,3 +173,25 @@ class PostgresGraphStore(GraphStoreBase):
             "SELECT data FROM relations WHERE user_id = %s", (self._user_id,)
         ).fetchall()
         return [Relation(**r[0]) for r in rows]
+
+    def archive_relation_version(self, old_relation: Relation, superseded_at: datetime) -> None:
+        self._conn.execute(
+            "INSERT INTO relation_history (relation_id, user_id, valid_from, valid_to, data) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (old_relation.id, self._user_id, old_relation.valid_from, superseded_at, old_relation.model_dump_json()),
+        )
+
+    def relation_as_of(self, relation_id: str, as_of: datetime) -> Relation | None:
+        current_row = self._conn.execute(
+            "SELECT data FROM relations WHERE id = %s AND user_id = %s", (relation_id, self._user_id)
+        ).fetchone()
+        if current_row is not None:
+            current = Relation(**current_row[0])
+            if as_of >= current.valid_from:
+                return current
+        row = self._conn.execute(
+            "SELECT data FROM relation_history WHERE relation_id = %s AND user_id = %s "
+            "AND valid_from <= %s AND %s < valid_to ORDER BY valid_from DESC LIMIT 1",
+            (relation_id, self._user_id, as_of, as_of),
+        ).fetchone()
+        return Relation(**row[0]) if row else None

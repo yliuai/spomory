@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 import networkx as nx
@@ -29,6 +30,13 @@ CREATE TABLE IF NOT EXISTS relations (
 );
 CREATE INDEX IF NOT EXISTS idx_relations_subject ON relations(subject_id);
 CREATE INDEX IF NOT EXISTS idx_relations_object ON relations(object_id);
+CREATE TABLE IF NOT EXISTS relation_history (
+    relation_id TEXT NOT NULL,
+    valid_from TEXT NOT NULL,
+    valid_to TEXT NOT NULL,
+    data TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_relation_history_id ON relation_history(relation_id);
 """
 
 
@@ -183,6 +191,37 @@ class LocalGraphStore(GraphStoreBase):
 
     def all_relations(self) -> list[Relation]:
         return [data["relation"] for _, _, data in self._graph.edges(data=True)]
+
+    def _find_relation_by_id(self, relation_id: str) -> Relation | None:
+        for _, _, data in self._graph.edges(data=True):
+            if data["relation"].id == relation_id:
+                return data["relation"]
+        return None
+
+    def archive_relation_version(self, old_relation: Relation, superseded_at: datetime) -> None:
+        self._conn.execute(
+            "INSERT INTO relation_history (relation_id, valid_from, valid_to, data) VALUES (?, ?, ?, ?)",
+            (
+                old_relation.id,
+                old_relation.valid_from.isoformat(),
+                superseded_at.isoformat(),
+                self._encode(old_relation.model_dump_json()),
+            ),
+        )
+        self._conn.commit()
+
+    def relation_as_of(self, relation_id: str, as_of: datetime) -> Relation | None:
+        current = self._find_relation_by_id(relation_id)
+        if current is not None and as_of >= current.valid_from:
+            return current
+        row = self._conn.execute(
+            "SELECT data FROM relation_history WHERE relation_id = ? AND valid_from <= ? AND ? < valid_to "
+            "ORDER BY valid_from DESC LIMIT 1",
+            (relation_id, as_of.isoformat(), as_of.isoformat()),
+        ).fetchone()
+        if row is None:
+            return None
+        return Relation(**json.loads(self._decode(row[0])))
 
 
 def migrate_plaintext_to_encrypted(db_path: str | Path, encryption_key: bytes) -> bool:

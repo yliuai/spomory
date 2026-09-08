@@ -7,6 +7,8 @@ against a real database in this environment (see test_postgres_store.py).
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from memory_core.graph.models import Entity, Relation
@@ -114,3 +116,44 @@ class GraphStoreContractTests:
 
         assert len(store.all_entities()) == 2
         assert len(store.all_relations()) == 1
+
+    def test_relation_as_of_reconstructs_a_superseded_value(self, store):
+        # Epic 11.7: "recorded wrong info, later corrected" -- querying a
+        # transaction-time point before the correction must still return
+        # the (wrong, at the time) value the system believed back then,
+        # while querying now returns the corrected one.
+        a = Entity(name="张三", type="person")
+        wrong_employer = Entity(name="公司A", type="organization")
+        right_employer = Entity(name="公司B", type="organization")
+        store.add_entities([a, wrong_employer, right_employer])
+
+        t0 = datetime(2026, 1, 1, tzinfo=UTC)
+        relation = Relation(
+            subject_id=a.id, predicate="任职于", object_id=wrong_employer.id, valid_from=t0
+        )
+        store.add_relations([relation])
+
+        t1 = datetime(2026, 6, 1, tzinfo=UTC)
+        store.archive_relation_version(relation, superseded_at=t1)
+        corrected = relation.model_copy(update={"object_id": right_employer.id, "valid_from": t1})
+        store.add_relations([corrected])
+
+        # Before the correction: the system believed the wrong employer.
+        as_of_before = store.relation_as_of(relation.id, datetime(2026, 3, 1, tzinfo=UTC))
+        assert as_of_before is not None
+        assert as_of_before.object_id == wrong_employer.id
+
+        # After the correction: the current, right value.
+        as_of_after = store.relation_as_of(relation.id, datetime(2026, 9, 1, tzinfo=UTC))
+        assert as_of_after is not None
+        assert as_of_after.object_id == right_employer.id
+
+        # Currently-live query must agree with the "as of now" reading.
+        current = next(r for r in store.all_relations() if r.id == relation.id)
+        assert current.object_id == right_employer.id
+
+        # Before the fact was ever recorded: nothing to find.
+        assert store.relation_as_of(relation.id, datetime(2025, 1, 1, tzinfo=UTC)) is None
+
+    def test_relation_as_of_unknown_id_returns_none(self, store):
+        assert store.relation_as_of("does-not-exist", datetime.now(UTC)) is None

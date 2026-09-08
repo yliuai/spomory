@@ -67,3 +67,18 @@ class Relation(BaseModel):
             "gone a long time without being useful. None until the first hit."
         ),
     )
+    valid_from: datetime = Field(
+        default_factory=_utcnow,
+        description=(
+            "Epic 11.7: transaction-time start of *this specific value* -- "
+            "when the system started believing subject/predicate/object as "
+            "currently written. Unlike `created_at` (fixed at this relation "
+            "id's first write and never touched again), `valid_from` moves "
+            "forward on every UPDATE, since a corrected fact's *previous* "
+            "value stopped being current at that point. This is transaction "
+            "time (when the system's belief changed), not real-world valid "
+            "time (when the fact actually became true) -- the latter would "
+            "need dates extracted from the source text, which this doesn't "
+            "attempt; see `GraphStoreBase.relation_as_of`."
+        ),
+    )

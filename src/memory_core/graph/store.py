@@ -10,6 +10,7 @@ interface has to be stable from day one, not iterated on casually.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 
 from .models import Entity, Relation
 
@@ -62,4 +63,29 @@ class GraphStoreBase(ABC):
 
     @abstractmethod
     def all_relations(self) -> list[Relation]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def archive_relation_version(self, old_relation: Relation, superseded_at: datetime) -> None:
+        """Epic 11.7: record `old_relation` -- a relation's content the
+        instant before an UPDATE overwrites it -- into transaction-time
+        history, so `relation_as_of` can still answer "what did the system
+        believe at some point in the past" after a correction. Called by
+        `memory_manager.actions.apply_action`'s UPDATE branch, which is the
+        only place that legitimately treats an upsert as "this fact
+        changed" rather than a fresh write or a data-migration replay (see
+        that module for why archiving doesn't live inside `add_relations`
+        itself)."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def relation_as_of(self, relation_id: str, as_of: datetime) -> Relation | None:
+        """Epic 11.7: the value `relation_id` held at transaction-time
+        `as_of` -- the current row if `as_of` is on or after its
+        `valid_from`, otherwise whichever archived version's
+        `[valid_from, valid_to)` window contains `as_of`. Returns `None` if
+        `relation_id` didn't exist yet at that point (or doesn't exist at
+        all). This answers "what did the system believe was true then", not
+        "when did this become true in the real world" -- see `Relation
+        .valid_from`'s docstring for that distinction."""
         raise NotImplementedError

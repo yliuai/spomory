@@ -17,6 +17,8 @@ Phase 0 就冻结，Phase 2 向社区开放存储适配层时不需要推倒重�
 | `query_subgraph(entity_ids, hops)` | 查询以给定实体为中心、N 跳内的induced子图，供 Epic 2 检索使用 |
 | `delete_entity(entity_id)` | 物理删除实体及相关关系，对应 Epic 7.3 的"真删除"承诺 |
 | `all_entities()` / `all_relations()` | 全量导出用，供 Epic 7 导出接口和基准测试使用 |
+| `archive_relation_version(old_relation, superseded_at)` | Epic 11.7：把一条关系被 UPDATE 覆盖前的内容存进事务时间历史，供 `relation_as_of` 查询 |
+| `relation_as_of(relation_id, as_of)` | Epic 11.7：查询某条关系在历史某个事务时间点上的值——系统当时相信的事实，不是现在的事实 |
 
 ## 设计原则
 
@@ -28,12 +30,37 @@ Phase 0 就冻结，Phase 2 向社区开放存储适配层时不需要推倒重�
    "真删除"承诺在存储层的落地点，任何新后端实现都必须遵守这一点。
 4. **子图查询用跳数而非固定深度**，为 Epic 2 的个性化 PageRank 检索保留
    足够的召回范围控制空间。
+5. **`add_relations` 的按 id upsert 语义不隐式产生历史**——Epic 11.7 的
+   事务时间归档是调用方（`memory_manager/actions.py` 的 UPDATE 分支）
+   显式决定"这是一次事实纠正"之后，另外调用 `archive_relation_version`
+   才发生的，不是 `add_relations` 自动做的。这样设计是因为 `add_relations`
+   也被数据迁移之类的场景用来重写内容没变的行（比如 Epic 11.2 的加密
+   迁移脚本），如果归档逻辑挂在 `add_relations` 里，这类重写会被误判成
+   "事实变化"，伪造出根本没发生过的历史记录。
 
 ## 已知实现
 
 - `LocalGraphStore`（`graph/local_store.py`）：基于 `networkx` 内存图 +
-  SQLite 持久化，Phase 0/Phase 1 本地默认后端。
+  SQLite 持久化，Phase 0/Phase 1 本地默认后端。`relation_history` 表
+  （Epic 11.7）复用和主表一样的 Fernet 加密。
 - `PostgresGraphStore`（`graph/postgres_store.py`，Epic 8.2）：接口不变，
   已在真实 PostgreSQL 10 实例上跑通全部契约测试
   （`tests/graph_store_contract.py`）和 MCP Server 功能对等性验证
   （`tests/test_postgres_mcp_parity.py`），详见 `docs/postgres_setup.md`。
+  `relation_history` 表（Epic 11.7）按 `user_id` 隔离，和其他表的多租户
+  规则一致。
+
+## 事务时间 vs 现实时间（Epic 11.7）
+
+`relation_as_of(relation_id, as_of)` 回答的是**事务时间**问题——"系统在
+某个时间点相信什么是真的"，靠 `Relation.valid_from`（这条关系当前值
+成为系统信念的起点，每次 UPDATE 都会前移）和 `relation_history` 表
+（存归档的旧值 + 它当时生效的时间区间）重建。
+
+这**不是**完整的双时态（bitemporal）模型——真正的双时态还需要**现实
+时间**（valid time）：事实在现实世界里从什么时候开始为真，可能早于
+系统知道这件事的时间（比如"三月份换了工作"，但系统是九月才被告知）。
+现实时间需要从原文里抽取时间信息才能支持，目前的抽取管道
+（`graph/incremental.py`）不做这件事——`docs/methodology.md` 第 4 节
+"抽取管道对时间信息的处理是一个已发现的真实缺口"说的就是这个问题，
+Epic 11.7 只解决了事务时间这一半，这个缺口本身还在。
