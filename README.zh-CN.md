@@ -228,18 +228,19 @@ pytest -m "not slow"      # 跳过需要下载模型/训练的测试，几秒内
 | 文档                                                                                                                              | 内容                                                            |
 | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
 | [mcp_quickstart.md](docs/mcp_quickstart.md) ([English](docs/mcp_quickstart.en.md))                                                | MCP Server 安装、配置、接入 Claude Desktop/Cursor、真实踩坑记录 |
-| [graph_store_interface.md](docs/graph_store_interface.md)                                                                         | 存储适配器接口设计说明                                          |
-| [export_format.md](docs/export_format.md)                                                                                         | "记忆护照"导出格式                                              |
-| [dataset_format.md](docs/dataset_format.md)                                                                                       | GRPO 训练数据格式与真实数据集生成过程                           |
-| [methodology.md](docs/methodology.md)                                                                                             | 技术方法论：已验证结论 vs 尚待验证的部分                        |
-| [benchmark_smoke_test.md](docs/benchmark_smoke_test.md)                                                                           | LoCoMo 真实跑分结果与失败案例分析                               |
-| [memory_manager_eval.md](docs/memory_manager_eval.md)                                                                             | 规则式 vs GRPO 训练后策略对比，含调试过程                       |
-| [multimodal_verification.md](docs/multimodal_verification.md)                                                                     | 图片 + CLIP 二次校验实验结果                                    |
-| [gpu_training_runbook.md](docs/gpu_training_runbook.md)                                                                           | GPU 训练环境部署记录（含真实踩过的坑）                          |
-| [postgres_setup.md](docs/postgres_setup.md)                                                                                       | 云端 Postgres 后端部署记录                                      |
-| [leaderboard_submission.md](docs/leaderboard_submission.md)                                                                       | 第三方评测榜单调研                                              |
-| [mvp_scope.md](docs/mvp_scope.md)                                                                                                 | MVP 最小功能范围定义                                            |
-| [privacy_policy_draft.md](docs/privacy_policy_draft.md) / [product_copy_memory_passport.md](docs/product_copy_memory_passport.md) | 隐私政策草案 / 对外产品文案素材                                 |
+| [graph_store_interface.md](docs/graph_store_interface.md) ([English](docs/graph_store_interface.en.md))                          | 存储适配器接口设计说明                                          |
+| [export_format.md](docs/export_format.md) ([English](docs/export_format.en.md))                                                   | "记忆护照"导出格式                                              |
+| [dataset_format.md](docs/dataset_format.md) ([English](docs/dataset_format.en.md))                                                | GRPO 训练数据格式与真实数据集生成过程                           |
+| [methodology.md](docs/methodology.md) ([English](docs/methodology.en.md))                                                         | 技术方法论：已验证结论 vs 尚待验证的部分                        |
+| [benchmark_smoke_test.md](docs/benchmark_smoke_test.md) ([English](docs/benchmark_smoke_test.en.md))                              | LoCoMo 真实跑分结果与失败案例分析                               |
+| [memory_manager_eval.md](docs/memory_manager_eval.md) ([English](docs/memory_manager_eval.en.md))                                 | 规则式 vs GRPO 训练后策略对比，含调试过程                       |
+| [multimodal_verification.md](docs/multimodal_verification.md) ([English](docs/multimodal_verification.en.md))                     | 图片 + CLIP 二次校验实验结果                                    |
+| [gpu_training_runbook.md](docs/gpu_training_runbook.md) ([English](docs/gpu_training_runbook.en.md))                              | GPU 训练环境部署记录（含真实踩过的坑）                          |
+| [postgres_setup.md](docs/postgres_setup.md) ([English](docs/postgres_setup.en.md))                                                | 云端 Postgres 后端部署记录                                      |
+| [leaderboard_submission.md](docs/leaderboard_submission.md) ([English](docs/leaderboard_submission.en.md))                        | 第三方评测榜单调研                                              |
+| [mvp_scope.md](docs/mvp_scope.md) ([English](docs/mvp_scope.en.md))                                                               | MVP 最小功能范围定义                                            |
+| [privacy_policy_draft.md](docs/privacy_policy_draft.md) ([English](docs/privacy_policy_draft.en.md)) / [product_copy_memory_passport.md](docs/product_copy_memory_passport.md) ([English](docs/product_copy_memory_passport.en.md)) | 隐私政策草案 / 对外产品文案素材                                 |
+| [eng_note_cjk_rendering_bug.md](docs/eng_note_cjk_rendering_bug.md) ([English](docs/eng_note_cjk_rendering_bug.en.md))            | 工程笔记：一次真实的 CJK 渲染 bug 发现→修复→验证过程            |
 
 ## 已知限制
 

@@ -262,22 +262,21 @@ env vars (`LLM_API_KEY`, etc.) or an already-downloaded model cache.
 | Doc | Content |
 |---|---|
 | [mcp_quickstart.en.md](docs/mcp_quickstart.en.md) ([中文](docs/mcp_quickstart.md)) | MCP Server install, configuration, connecting Claude Desktop/Cursor, real-world gotchas |
-| [graph_store_interface.md](docs/graph_store_interface.md) *(Chinese only)* | Storage adapter interface design |
-| [export_format.md](docs/export_format.md) *(Chinese only)* | The "memory passport" export format |
-| [dataset_format.md](docs/dataset_format.md) *(Chinese only)* | GRPO training data format and how the real dataset was generated |
-| [methodology.md](docs/methodology.md) *(Chinese only)* | Technical methodology: what's actually verified vs. still open |
-| [benchmark_smoke_test.md](docs/benchmark_smoke_test.md) *(Chinese only)* | Real LoCoMo benchmark results and failure-case analysis |
-| [memory_manager_eval.md](docs/memory_manager_eval.md) *(Chinese only)* | Rule-based vs. GRPO-trained policy comparison, including the debugging process |
-| [multimodal_verification.md](docs/multimodal_verification.md) *(Chinese only)* | Image + CLIP verification experiment results |
-| [gpu_training_runbook.md](docs/gpu_training_runbook.md) *(Chinese only)* | GPU training environment setup log (including real gotchas hit) |
-| [postgres_setup.md](docs/postgres_setup.md) *(Chinese only)* | Cloud Postgres backend deployment log |
-| [leaderboard_submission.md](docs/leaderboard_submission.md) *(Chinese only)* | Third-party leaderboard research |
-| [mvp_scope.md](docs/mvp_scope.md) *(Chinese only)* | MVP scope definition |
-| [privacy_policy_draft.md](docs/privacy_policy_draft.md) / [product_copy_memory_passport.md](docs/product_copy_memory_passport.md) *(Chinese only)* | Draft privacy policy / external-facing product copy |
+| [graph_store_interface.en.md](docs/graph_store_interface.en.md) ([中文](docs/graph_store_interface.md)) | Storage adapter interface design |
+| [export_format.en.md](docs/export_format.en.md) ([中文](docs/export_format.md)) | The "memory passport" export format |
+| [dataset_format.en.md](docs/dataset_format.en.md) ([中文](docs/dataset_format.md)) | GRPO training data format and how the real dataset was generated |
+| [methodology.en.md](docs/methodology.en.md) ([中文](docs/methodology.md)) | Technical methodology: what's actually verified vs. still open |
+| [benchmark_smoke_test.en.md](docs/benchmark_smoke_test.en.md) ([中文](docs/benchmark_smoke_test.md)) | Real LoCoMo benchmark results and failure-case analysis |
+| [memory_manager_eval.en.md](docs/memory_manager_eval.en.md) ([中文](docs/memory_manager_eval.md)) | Rule-based vs. GRPO-trained policy comparison, including the debugging process |
+| [multimodal_verification.en.md](docs/multimodal_verification.en.md) ([中文](docs/multimodal_verification.md)) | Image + CLIP verification experiment results |
+| [gpu_training_runbook.en.md](docs/gpu_training_runbook.en.md) ([中文](docs/gpu_training_runbook.md)) | GPU training environment setup log (including real gotchas hit) |
+| [postgres_setup.en.md](docs/postgres_setup.en.md) ([中文](docs/postgres_setup.md)) | Cloud Postgres backend deployment log |
+| [leaderboard_submission.en.md](docs/leaderboard_submission.en.md) ([中文](docs/leaderboard_submission.md)) | Third-party leaderboard research |
+| [mvp_scope.en.md](docs/mvp_scope.en.md) ([中文](docs/mvp_scope.md)) | MVP scope definition |
+| [privacy_policy_draft.en.md](docs/privacy_policy_draft.en.md) ([中文](docs/privacy_policy_draft.md)) / [product_copy_memory_passport.en.md](docs/product_copy_memory_passport.en.md) ([中文](docs/product_copy_memory_passport.md)) | Draft privacy policy / external-facing product copy |
+| [eng_note_cjk_rendering_bug.en.md](docs/eng_note_cjk_rendering_bug.en.md) ([中文](docs/eng_note_cjk_rendering_bug.md)) | Engineering note: a real discover→fix→verify trace for a CJK rendering bug |
 
-The docs above are currently Chinese-only except where an English version
-is linked; they'll be translated as the project's English-speaking
-audience grows. If you need one translated sooner, open an issue.
+Every doc above now has both a Chinese and an English version.
 
 ## Known limitations
 
