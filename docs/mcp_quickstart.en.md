@@ -230,6 +230,7 @@ uv pip install "memory-core[llm,embedding,mcp,cloud] @ git+https://github.com/yl
 export DATABASE_URL=postgresql://user:pass@host:5432/dbname   # required, no local-SQLite fallback
 export LLM_API_KEY=...
 export MCP_ALLOWED_HOSTS=memory.example.com,memory.example.com:443  # required, see the security note below
+export CORS_ALLOWED_ORIGINS=https://spomory.yliuai.com  # optional, this is already the default
 export PORT=8000  # optional, defaults to 8000
 
 memory-core-mcp-remote
@@ -244,6 +245,16 @@ by default (fail closed rather than leave an implicit allow-all-hosts back
 door); this was verified with a local smoke test using a fake `Host` header
 (see "Verification status" below).
 
+**`CORS_ALLOWED_ORIGINS` is a separate layer** from `MCP_ALLOWED_HOSTS`/
+`MCP_ALLOWED_ORIGINS` above, which govern the MCP transport's own Origin
+check and never add CORS response headers — a browser `fetch()` (e.g. the
+marketing site's signup form) is still blocked by the browser itself
+regardless of what this service returns. `create_app` takes a new
+`cors_allowed_origins` parameter that adds `Access-Control-Allow-Origin`
+for plain HTTP routes like `/users/register`; leaving it unset keeps CORS
+fully off (unchanged from before this parameter existed), it never
+defaults open to `*`. Comma-separated for multiple origins.
+
 ### Use it
 
 ```bash
@@ -255,6 +266,56 @@ curl -X POST https://memory.example.com/users/register \
 Configure a remote MCP connection in Claude Desktop/Cursor (exact JSON shape
 per that client's current docs): `url` is `https://memory.example.com/mcp-apikey`,
 with an `x-api-key: <the key from above>` header.
+
+**Calling this endpoint again with the same email is safe** — it resolves
+to the same account (`user_id` stays the same) and issues a fresh key each
+time, so losing a key just means registering again rather than needing a
+separate recovery flow; old keys keep working until explicitly revoked.
+There's basic rate limiting to stop scripted abuse (5/hour per email,
+20/hour per IP, 429 past that).
+
+**This endpoint itself doesn't verify email ownership** — the key goes
+straight back in the response to whoever calls it, so typing in someone
+else's email gets a working key for their account; rate limiting doesn't
+stop someone deliberately targeting one specific email. Fine for curling
+with your own email, but **don't wire this one directly into a public web
+form**.
+
+### Email-verified registration (for a public web form)
+
+```bash
+curl -X POST https://memory.example.com/users/register/request \
+  -H "Content-Type: application/json" -d '{"email": "you@your-real-domain.com"}'
+# the response is just "check your email" -- no key in this response
+
+# clicking the link in that email (GET /users/register/verify?token=...)
+# is what actually displays the key, on the page it opens
+```
+
+**Use a real, deliverable address here, not a copy-pasted `you@example.com`**
+— the mail provider (Resend, in this deployment) rejects sending to RFC
+2606 reserved documentation domains like `example.com`/`example.org` and
+returns a 503. This isn't hypothetical: it's a real bug that got hit
+during deployment verification (unhandled at the time, so it surfaced as
+a bare 500 rather than the current clean 503) -- 503, not 502, because
+this deployment sits behind Cloudflare, and production testing confirmed
+Cloudflare silently replaces a 502/504 response body with its own generic
+error page regardless of what the origin actually sent, which would have
+swallowed this message entirely. It's fixed to catch and report the
+failure cleanly now, but hitting the underlying trigger (a placeholder
+domain) is still avoidable, so the example here uses a different
+placeholder instead of relying on the error message alone.
+
+The difference from the plain version above: the key is only ever issued
+and shown after that email link is clicked, so no inbox access means no
+key — this is what actually closes the "typed in someone else's email"
+gap, not just rate limiting around it. `register_or_reissue_key` underneath
+behaves the same as the direct path (same email → same account, a fresh
+key each call), just gated on that extra verification step. Needs
+`RESEND_API_KEY`/`EMAIL_FROM` set to deploy (independent of OAuth — you
+don't need the OAuth flow turned on to use this pair); `PUBLIC_BASE_URL`
+is optional and defaults to `OAUTH_ISSUER_URL` when that's already set to
+the same host.
 
 ### Not part of this path
 

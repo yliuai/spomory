@@ -25,10 +25,12 @@ of reaching for a second subdomain just to keep both endings in "mcp".
 from __future__ import annotations
 
 import html
+import logging
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import TYPE_CHECKING
 
-from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
@@ -39,6 +41,8 @@ from .oauth_store import OAuthStore
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
 
+logger = logging.getLogger(__name__)
+
 
 class RegisterRequest(BaseModel):
     email: str
@@ -47,6 +51,10 @@ class RegisterRequest(BaseModel):
 class RegisterResponse(BaseModel):
     user_id: str
     api_key: str  # shown once, at registration
+
+
+class RegisterRequestSentResponse(BaseModel):
+    message: str
 
 
 def _mount_mcp_app(
@@ -68,6 +76,41 @@ def _mount_mcp_app(
     )
 
 
+def _send_email_or_503(email_sender: EmailSender, to: str, subject: str, body: str) -> None:
+    """`EmailSender.send` talks to a real external provider (Resend) and can
+    fail for reasons entirely outside this service's control -- a rejected
+    recipient domain, a transient outage, a misconfigured API key. Left
+    unguarded, that surfaced as a bare 500 with no detail (a real bug caught
+    by the website team reproducing it against `/users/register/request`):
+    Resend specifically rejects sending to RFC 2606 reserved domains like
+    `example.com` -- exactly what every curl example in this project's docs
+    uses as a placeholder -- so anyone copy-pasting the documented example
+    verbatim hit this. Catching it here turns that into a clean, actionable
+    error instead of an opaque crash, for that failure mode and any other
+    provider-side one.
+
+    503, not 502/504: this deployment sits behind Cloudflare, which
+    silently replaces the *body* of an origin's 502/504 response with its
+    own generic "error code: 502" page regardless of what the origin
+    actually sent -- verified against this exact endpoint in production,
+    where the detail message below came back as Cloudflare's boilerplate
+    instead of reaching the client. 503 (and plain 4xx) pass through
+    unmodified, which is the only way the caller actually sees this
+    message rather than a useless substitute."""
+    try:
+        email_sender.send(to=to, subject=subject, body=body)
+    except Exception:
+        logger.exception("email_sender.send failed while sending to %s", to)
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "failed to send the email -- if you used a placeholder address like "
+                "example.com/example.org, the mail provider rejects those; retry with "
+                "a real, deliverable address"
+            ),
+        ) from None
+
+
 def create_app(
     auth_store: AuthStore | None = None,
     rate_limit_per_key: int = 1000,
@@ -78,6 +121,7 @@ def create_app(
     oauth_base_url: str | None = None,
     allowed_hosts: list[str] | None = None,
     allowed_origins: list[str] | None = None,
+    cors_allowed_origins: list[str] | None = None,
 ) -> FastAPI:
     """`allowed_hosts` is the MCP transport's DNS-rebinding-protection
     allowlist (checked against the request's `Host` header) -- it applies to
@@ -101,9 +145,34 @@ def create_app(
     (see `MCP_ALLOWED_ORIGINS`) allows that one known-legitimate origin
     without weakening the check against anything else.
 
-    `oauth_store`/`email_sender` are required together with
-    `oauth_mcp_server` -- they back the `/oauth/login` and `/oauth/verify`
-    routes that implement `SpomoryOAuthProvider.authorize`'s redirect target.
+    `cors_allowed_origins` is a separate allowlist for actual browser CORS
+    (the `Access-Control-Allow-Origin` response header + preflight `OPTIONS`
+    handling on plain HTTP routes like `/users/register`) -- unrelated to
+    the MCP transport's own Origin check above, which never sends CORS
+    headers back. Without this, a browser-based signup form (spomory's own
+    marketing site, `CORS_ALLOWED_ORIGINS` env var) gets no
+    `Access-Control-Allow-Origin` header and the request is blocked by the
+    browser before this service's route code ever runs, even though the
+    same request works fine from curl or a non-browser client. Leaving it
+    unset disables CORS entirely (same as today, before this parameter
+    existed) rather than defaulting to an open `*` origin.
+
+    `oauth_store` is required together with `oauth_mcp_server` -- it backs
+    the `/oauth/login` and `/oauth/verify` routes that implement
+    `SpomoryOAuthProvider.authorize`'s redirect target.
+
+    `email_sender` is independent of `oauth_mcp_server`: passing it (with
+    `oauth_base_url`, used the same way as below) mounts
+    `POST /users/register/request` + `GET /users/register/verify`, an
+    email-verified alternative to the plain `POST /users/register` above.
+    Plain `/users/register` never confirms the caller actually controls the
+    email they typed in -- the key goes straight back in the HTTP response
+    to whoever asked, so it's fine for a developer curling their own email
+    but not safe to put behind a public web form (anyone could type in
+    someone else's email and get a working key against that person's
+    account). The `/request`+`/verify` pair only ever hands out a key after
+    a link mailed to that address is clicked, so registering requires
+    actually reading mail sent there.
     """
     store = auth_store or AuthStore()
 
@@ -154,6 +223,14 @@ def create_app(
 
     app = FastAPI(title="memory-core cloud API", lifespan=lifespan)
 
+    if cors_allowed_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_allowed_origins,
+            allow_methods=["GET", "POST"],
+            allow_headers=["content-type", "x-api-key"],
+        )
+
     def require_api_key(x_api_key: str = Header(...)) -> AuthenticatedUser:
         user = store.authenticate(x_api_key)
         if user is None:
@@ -166,8 +243,16 @@ def create_app(
         return user
 
     @app.post("/users/register", response_model=RegisterResponse)
-    def register(req: RegisterRequest) -> RegisterResponse:
-        issued = store.register_user(req.email)
+    def register(req: RegisterRequest, request: Request) -> RegisterResponse:
+        # request.client.host reflects the real client IP, not nginx's, only
+        # because remote_main.py's uvicorn.run(proxy_headers=True,
+        # forwarded_allow_ips="127.0.0.1") tells Starlette to trust nginx's
+        # X-Forwarded-For -- without that this would rate-limit "127.0.0.1"
+        # for every request.
+        client_ip = request.client.host if request.client else "unknown"
+        if not store.check_and_record_registration_attempt(req.email, client_ip):
+            raise HTTPException(status_code=429, detail="too many registration attempts, try again later")
+        issued = store.register_or_reissue_key(req.email)
         return RegisterResponse(user_id=issued.user_id, api_key=issued.raw_key)
 
     @app.get("/me")
@@ -175,11 +260,52 @@ def create_app(
         store.record_usage(user.api_key_id, endpoint="/me")
         return {"user_id": user.user_id}
 
+    base_url = oauth_base_url.rstrip("/") if oauth_base_url else None
+
+    if email_sender is not None:
+        assert base_url is not None, "oauth_base_url is required alongside email_sender"
+
+        @app.post("/users/register/request", response_model=RegisterRequestSentResponse)
+        def request_registration_email(req: RegisterRequest, request: Request) -> RegisterRequestSentResponse:
+            # Same abuse surface as plain /users/register (a script could
+            # hammer this to spam an inbox or probe which emails already
+            # have accounts), so it shares the same rate limiter/table.
+            client_ip = request.client.host if request.client else "unknown"
+            if not store.check_and_record_registration_attempt(req.email, client_ip):
+                raise HTTPException(status_code=429, detail="too many registration attempts, try again later")
+            token = store.create_registration_verification_token(req.email)
+            # Absolute for the same reason as oauth_login_submit's
+            # verify_url below: a mail client has no "current page" to
+            # resolve a relative link against.
+            verify_url = f"{base_url}/users/register/verify?token={token}"
+            _send_email_or_503(
+                email_sender,
+                to=req.email,
+                subject="Confirm your Spomory registration",
+                body=(
+                    "<p>Click to get your API key: "
+                    f"<a href='{html.escape(verify_url)}'>{html.escape(verify_url)}</a></p>"
+                ),
+            )
+            return RegisterRequestSentResponse(message="Check your email for a link to get your API key.")
+
+        @app.get("/users/register/verify", response_class=HTMLResponse)
+        def verify_registration_email(token: str = Query(...)) -> str:
+            email = store.consume_registration_verification_token(token)
+            if email is None:
+                raise HTTPException(status_code=400, detail="invalid, expired, or already-used verification link")
+            issued = store.register_or_reissue_key(email)
+            return (
+                "<p>Your API key (shown once -- save it now):</p>"
+                f"<pre>{html.escape(issued.raw_key)}</pre>"
+                "<p>Configure your MCP client with this as the <code>x-api-key</code> header "
+                "on the <code>/mcp-apikey/</code> connection.</p>"
+            )
+
     if oauth_mcp_server is not None:
-        assert oauth_store is not None and email_sender is not None and oauth_base_url is not None, (
+        assert oauth_store is not None and email_sender is not None and base_url is not None, (
             "oauth_store, email_sender, and oauth_base_url are required alongside oauth_mcp_server"
         )
-        oauth_base_url = oauth_base_url.rstrip("/")
 
         @app.get("/oauth/login", response_class=HTMLResponse)
         def oauth_login_form(request_id: str = Query(...)) -> str:
@@ -204,8 +330,9 @@ def create_app(
             # against (a bare "/oauth/verify?..." was tried first and real
             # mail clients turned it into something like
             # "http://oauth/verify?..." -- "oauth" read as a bare hostname).
-            verify_url = f"{oauth_base_url}/oauth/verify?token={magic_link_token}"
-            email_sender.send(
+            verify_url = f"{base_url}/oauth/verify?token={magic_link_token}"
+            _send_email_or_503(
+                email_sender,
                 to=email,
                 subject="Your Spomory login link",
                 body=f"<p>Click to finish connecting: <a href='{html.escape(verify_url)}'>{html.escape(verify_url)}</a></p>",

@@ -199,6 +199,7 @@ uv pip install "memory-core[llm,embedding,mcp,cloud] @ git+https://github.com/yl
 export DATABASE_URL=postgresql://user:pass@host:5432/dbname   # 必填，没有本地 SQLite 兜底
 export LLM_API_KEY=...
 export MCP_ALLOWED_HOSTS=memory.example.com,memory.example.com:443  # 必填，见下面的安全说明
+export CORS_ALLOWED_ORIGINS=https://spomory.yliuai.com  # 可选，默认就是这个值
 export PORT=8000  # 可选，默认 8000
 
 memory-core-mcp-remote
@@ -209,6 +210,14 @@ memory-core-mcp-remote
 `Host` 头，不在允许列表里直接返回 421——不设置的话不是"默认放行"，而是
 默认拒绝所有请求（宁可部署完连不上也不留一个隐性允许所有 Host 的后门），
 已经用一个假 Host 头的本地烟雾测试验证过这个行为（见下面"验证状态"）。
+
+**`CORS_ALLOWED_ORIGINS` 是单独一层放行**，跟上面 `MCP_ALLOWED_HOSTS`/
+`MCP_ALLOWED_ORIGINS` 管的 MCP 传输层 Origin 校验是两回事——那一层校验
+不会给响应加 CORS 头，浏览器发起的 `fetch()` 请求（比如官网的注册表单）
+仍然会被浏览器自己挡住，跟这台服务本身返回什么无关。`create_app` 新增
+`cors_allowed_origins` 参数，给 `/users/register` 这类普通 HTTP 路由加
+`Access-Control-Allow-Origin`；不设置时行为跟之前完全一样（CORS 完全
+关闭），不会默认放开成 `*`。逗号分隔可以放多个来源。
 
 ### 使用
 
@@ -221,6 +230,46 @@ curl -X POST https://memory.example.com/users/register \
 Claude Desktop/Cursor 里配一个远程 MCP 连接（具体 JSON 结构以客户端当前
 文档为准），`url` 填 `https://memory.example.com/mcp-apikey`，请求头带上
 `x-api-key: <上面拿到的 key>`。
+
+**同一个邮箱可以重复调用这个接口**：会解析到同一个账号（`user_id` 不变），
+但每次都会签发一把新 Key——弄丢了 Key 就再调一次拿新的，不需要单独的
+找回流程；旧 Key 在被显式吊销前继续有效。加了基础限流防止脚本刷（同一
+邮箱每小时最多 5 次、同一 IP 每小时最多 20 次，超出返回 429）。
+
+**这个接口本身没有验证邮箱所有权**——响应直接把 Key 返回给调用方，填谁
+的邮箱就能拿到谁账号的 Key，限流防不住"专门填别人邮箱"这种针对性滥用。
+自己敲 curl 用自己的邮箱没问题，但**不要把这个接口直接接到公开网页表单
+上**。
+
+### 邮箱验证版注册（给公开网页表单用）
+
+```bash
+curl -X POST https://memory.example.com/users/register/request \
+  -H "Content-Type: application/json" -d '{"email": "you@your-real-domain.com"}'
+# 响应只是"去查邮件"的提示，Key 不在这次响应里
+
+# 点开邮件里的链接（GET /users/register/verify?token=...），
+# 打开的网页上才会显示 Key
+```
+
+**这里必须换成一个真实能收信的邮箱，不能照抄 `you@example.com`**——发信
+服务商（这里用的是 Resend）会拒绝往 `example.com`/`example.org` 这类
+RFC 2606 保留的"文档示例"域名发信，返回 503。这不是猜测：这个坑真的
+在部署验证时踩到过一次（当时因为没有捕获 `email_sender.send()` 的异常，
+表现是裸的 500），已经修成捕获后返回带清晰提示的 503——用 503 不用 502，
+是因为这台服务部署在 Cloudflare 后面，生产环境实测确认 Cloudflare 会把
+源站返回的 502/504 响应体整个替换成它自己的通用错误页，我们精心写的
+提示信息压根传不到调用方手上，503 才能完整透传。但踩中的前提（用占位
+域名）本身还是会发生，所以文档示例直接换掉这个域名，不能只指望报错
+信息说清楚。
+
+跟上面的区别：Key 只会在点开邮件链接之后才签发和展示，没收到邮件、没
+点链接就拿不到 Key，从根上解决了"填别人邮箱换到别人的 Key"这个问题。
+`register_or_reissue_key` 内部逻辑跟直接版一样（同邮箱同账号、每次发新
+Key），只是多了邮箱验证这一步。部署上需要设置 `RESEND_API_KEY`/
+`EMAIL_FROM`（不需要额外开 OAuth 才能用这一组接口，两者是独立的）；
+`PUBLIC_BASE_URL` 可选，默认复用 `OAUTH_ISSUER_URL`（同一个域名的情况下
+不用单独设置）。
 
 ### 不在这条线里的东西
 

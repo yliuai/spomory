@@ -66,11 +66,38 @@ def default_remote_app() -> FastAPI:
     allowed_origins_env = os.environ.get("MCP_ALLOWED_ORIGINS", "https://claude.ai")
     allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()] or None
 
+    # Separate from the MCP transport's own Origin check above: this is
+    # plain browser CORS for /users/register (and any other non-MCP route),
+    # needed so spomory's own marketing site can submit the signup form
+    # with fetch() instead of requiring users to run curl by hand. Defaults
+    # to the production site's origin rather than "*" so this doesn't
+    # accidentally open the registration endpoint to arbitrary web pages.
+    cors_allowed_origins_env = os.environ.get("CORS_ALLOWED_ORIGINS", "https://spomory.yliuai.com")
+    cors_allowed_origins = [o.strip() for o in cors_allowed_origins_env.split(",") if o.strip()] or None
+
+    # Email sending is opt-in and independent of OAuth: set RESEND_API_KEY/
+    # EMAIL_FROM to enable the email-verified /users/register/request +
+    # /users/register/verify pair (see create_app's docstring for why plain
+    # /users/register alone isn't safe behind a public web form) even on a
+    # deployment that never turns on the full OAuth Connector flow below.
+    email_sender = None
+    if os.environ.get("RESEND_API_KEY"):
+        email_sender = ResendEmailSender(
+            api_key=os.environ["RESEND_API_KEY"], from_address=os.environ["EMAIL_FROM"]
+        )
+
+    # The absolute base URL embedded in outbound emails (registration-verify
+    # and, if OAuth is also on, OAuth login links) -- defaults to
+    # OAUTH_ISSUER_URL since on this deployment they're the same host, but
+    # kept as its own var so email-verified registration doesn't require
+    # turning on OAuth just to have a base URL to hand it.
+    public_base_url = os.environ.get("PUBLIC_BASE_URL") or os.environ.get("OAUTH_ISSUER_URL")
+
     # OAuth is opt-in: only mounted once OAUTH_ISSUER_URL is set, so an
     # existing deployment's env file keeps working unchanged until someone
     # deliberately adds the OAuth env vars (see docs/mcp_quickstart.md's
     # "OAuth 接入" section).
-    oauth_mcp_server = oauth_store = email_sender = None
+    oauth_mcp_server = oauth_store = None
     issuer_url = os.environ.get("OAUTH_ISSUER_URL")
     if issuer_url:
         resource_server_url = os.environ.get("OAUTH_RESOURCE_SERVER_URL", f"{issuer_url}/mcp")
@@ -89,9 +116,7 @@ def default_remote_app() -> FastAPI:
             audit_log=audit_log,
             stores=stores,
         )
-        email_sender = ResendEmailSender(
-            api_key=os.environ["RESEND_API_KEY"], from_address=os.environ["EMAIL_FROM"]
-        )
+        assert email_sender is not None, "OAuth login needs RESEND_API_KEY/EMAIL_FROM set too"
 
     return create_app(
         auth_store=auth_store,
@@ -99,9 +124,10 @@ def default_remote_app() -> FastAPI:
         oauth_mcp_server=oauth_mcp_server,
         oauth_store=oauth_store,
         email_sender=email_sender,
-        oauth_base_url=issuer_url,
+        oauth_base_url=public_base_url,
         allowed_hosts=allowed_hosts,
         allowed_origins=allowed_origins,
+        cors_allowed_origins=cors_allowed_origins,
     )
 
 
