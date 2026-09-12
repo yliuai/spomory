@@ -128,6 +128,12 @@ def default_remote_app() -> FastAPI:
         allowed_hosts=allowed_hosts,
         allowed_origins=allowed_origins,
         cors_allowed_origins=cors_allowed_origins,
+        # PH.md's public, unauthenticated website demo -- reuses the same
+        # llm/embedder instances the real MCP tools use, just never touches
+        # a GraphStoreBase, so this doesn't need an opt-in env var the way
+        # OAuth/email do: it's on wherever the base service is.
+        demo_llm=llm,
+        demo_embedder=embedder,
     )
 
 

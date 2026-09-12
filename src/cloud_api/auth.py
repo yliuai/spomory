@@ -48,7 +48,21 @@ CREATE TABLE IF NOT EXISTS registration_verification_tokens (
     expires_at REAL NOT NULL,
     used INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS demo_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ip TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_demo_attempts_ip ON demo_attempts(ip);
 """
+
+# PH.md's unauthenticated /demo/try endpoint: each call costs a real LLM
+# extraction call, and unlike registration there's no email to also key
+# the limit on -- IP is the only signal -- so this is tighter than the
+# registration limits above despite serving a similar
+# "stop a script, not a real visitor" purpose.
+DEMO_RATE_LIMIT_PER_IP = 8
+DEMO_RATE_LIMIT_WINDOW = "-1 hours"
 
 # Same TTL as the OAuth login flow's magic link (oauth_store.py) -- long
 # enough that a real inbox delay doesn't strand someone, short enough that
@@ -218,3 +232,15 @@ class AuthStore:
             "SELECT COUNT(*) FROM usage_events WHERE api_key_id = ?", (api_key_id,)
         ).fetchone()
         return row[0]
+
+    def check_and_record_demo_attempt(self, ip: str) -> bool:
+        """Same pattern as `check_and_record_registration_attempt`: records
+        first so a rejected attempt still counts, then reports whether this
+        IP is still within `DEMO_RATE_LIMIT_PER_IP` calls in the last hour."""
+        self._conn.execute("INSERT INTO demo_attempts (ip) VALUES (?)", (ip,))
+        self._conn.commit()
+        count = self._conn.execute(
+            "SELECT COUNT(*) FROM demo_attempts WHERE ip = ? AND created_at > datetime('now', ?)",
+            (ip, DEMO_RATE_LIMIT_WINDOW),
+        ).fetchone()[0]
+        return count <= DEMO_RATE_LIMIT_PER_IP

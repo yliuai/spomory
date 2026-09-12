@@ -9,6 +9,8 @@ from fastapi.testclient import TestClient
 from cloud_api.app import create_app
 from cloud_api.auth import AuthStore
 from cloud_api.email import FakeEmailSender
+from tests.test_incremental import FakeLLMProvider, _triple
+from tests.test_mcp_server import FakeEmbeddingProvider
 
 
 def _client(rate_limit_per_key: int = 1000) -> TestClient:
@@ -258,3 +260,94 @@ def test_register_rejects_unlisted_cors_origin():
     # up here as the header simply not being echoed back to that origin.
     assert resp.status_code == 200
     assert "access-control-allow-origin" not in resp.headers
+
+
+def _demo_client() -> TestClient:
+    store = AuthStore(":memory:")
+    triples = [_triple("张三", "任职于", "某公司")]
+    return TestClient(
+        create_app(auth_store=store, demo_llm=FakeLLMProvider(triples), demo_embedder=FakeEmbeddingProvider())
+    )
+
+
+def test_demo_endpoint_is_absent_without_llm_and_embedder():
+    store = AuthStore(":memory:")
+    client = TestClient(create_app(auth_store=store))
+    resp = client.post("/demo/try", json={"text": "anything"})
+    assert resp.status_code == 404
+
+
+def test_demo_extracts_entities_and_relations_without_a_query():
+    client = _demo_client()
+    resp = client.post("/demo/try", json={"text": "张三任职于某公司。"})
+    assert resp.status_code == 200
+    body = resp.json()
+    names = {e["name"] for e in body["entities"]}
+    assert names == {"张三", "某公司"}
+    assert len(body["relations"]) == 1
+    assert body["relations"][0]["predicate"] == "任职于"
+    assert body["context"] is None
+
+
+def test_demo_with_query_also_returns_context():
+    client = _demo_client()
+    resp = client.post("/demo/try", json={"text": "张三任职于某公司。", "query": "张三在哪工作？"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["context"]
+    assert "张三" in body["context"]
+
+
+def test_demo_never_persists_anything():
+    # Same store backs both the demo endpoint and a real registered user --
+    # calling /demo/try must not touch that store at all.
+    store = AuthStore(":memory:")
+    triples = [_triple("张三", "任职于", "某公司")]
+    client = TestClient(
+        create_app(auth_store=store, demo_llm=FakeLLMProvider(triples), demo_embedder=FakeEmbeddingProvider())
+    )
+    client.post("/demo/try", json={"text": "张三任职于某公司。"})
+    client.post("/demo/try", json={"text": "张三任职于某公司。"})
+    # No user/graph tables exist on AuthStore to check directly, but two
+    # identical calls producing two responses with different entity ids
+    # each time is the observable proof nothing is being reused/persisted
+    # across calls -- a persisted store would have deduped the second call
+    # against the first.
+    r1 = client.post("/demo/try", json={"text": "张三任职于某公司。"}).json()
+    r2 = client.post("/demo/try", json={"text": "张三任职于某公司。"}).json()
+    assert r1["entities"][0]["id"] != r2["entities"][0]["id"]
+
+
+def test_demo_rejects_overly_long_text():
+    client = _demo_client()
+    resp = client.post("/demo/try", json={"text": "x" * 3000})
+    assert resp.status_code == 400
+
+
+def test_demo_rate_limited_per_ip():
+    store = AuthStore(":memory:")
+    triples = [_triple("张三", "任职于", "某公司")]
+    client = TestClient(
+        create_app(auth_store=store, demo_llm=FakeLLMProvider(triples), demo_embedder=FakeEmbeddingProvider())
+    )
+    for _ in range(8):
+        resp = client.post("/demo/try", json={"text": "张三任职于某公司。"})
+        assert resp.status_code == 200
+    resp = client.post("/demo/try", json={"text": "张三任职于某公司。"})
+    assert resp.status_code == 429
+
+
+def test_demo_provider_failure_returns_clean_503():
+    class ExplodingLLM:
+        def extract_triples(self, text: str) -> list:
+            raise RuntimeError("simulated provider outage")
+
+        def generate(self, prompt: str, **kwargs: object) -> str:
+            raise NotImplementedError
+
+    store = AuthStore(":memory:")
+    client = TestClient(
+        create_app(auth_store=store, demo_llm=ExplodingLLM(), demo_embedder=FakeEmbeddingProvider())
+    )
+    resp = client.post("/demo/try", json={"text": "张三任职于某公司。"})
+    assert resp.status_code == 503

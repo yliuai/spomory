@@ -35,17 +35,44 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
 from .auth import AuthenticatedUser, AuthStore
+from .demo import DemoTextTooLongError, extract_and_search
 from .email import EmailSender
 from .oauth_store import OAuthStore
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
 
+    from memory_core.llm.base import LLMProvider
+
 logger = logging.getLogger(__name__)
 
 
 class RegisterRequest(BaseModel):
     email: str
+
+
+class DemoRequest(BaseModel):
+    text: str
+    query: str | None = None
+
+
+class DemoEntity(BaseModel):
+    id: str
+    name: str
+    type: str
+
+
+class DemoRelation(BaseModel):
+    id: str
+    subject_id: str
+    predicate: str
+    object_id: str
+
+
+class DemoResponse(BaseModel):
+    entities: list[DemoEntity]
+    relations: list[DemoRelation]
+    context: str | None = None
 
 
 class RegisterResponse(BaseModel):
@@ -122,6 +149,8 @@ def create_app(
     allowed_hosts: list[str] | None = None,
     allowed_origins: list[str] | None = None,
     cors_allowed_origins: list[str] | None = None,
+    demo_llm: LLMProvider | None = None,
+    demo_embedder: object | None = None,
 ) -> FastAPI:
     """`allowed_hosts` is the MCP transport's DNS-rebinding-protection
     allowlist (checked against the request's `Host` header) -- it applies to
@@ -259,6 +288,30 @@ def create_app(
     def me(user: AuthenticatedUser = Depends(enforce_quota)) -> dict[str, str]:  # noqa: B008
         store.record_usage(user.api_key_id, endpoint="/me")
         return {"user_id": user.user_id}
+
+    if demo_llm is not None and demo_embedder is not None:
+
+        @app.post("/demo/try", response_model=DemoResponse)
+        def demo_try(req: DemoRequest, request: Request) -> DemoResponse:
+            # Same IP-based reasoning as /users/register, but tighter (see
+            # DEMO_RATE_LIMIT_PER_IP): this call costs a real LLM extraction
+            # request and has no account behind it to hold accountable.
+            client_ip = request.client.host if request.client else "unknown"
+            if not store.check_and_record_demo_attempt(client_ip):
+                raise HTTPException(status_code=429, detail="too many demo requests, try again later")
+            try:
+                result = extract_and_search(demo_llm, demo_embedder, req.text, req.query)
+            except DemoTextTooLongError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from None
+            except Exception:
+                # Same rationale as _send_email_or_503: this calls a real
+                # external LLM API that can fail for reasons outside this
+                # service's control, and Cloudflare eats 502/504 bodies.
+                logger.exception("demo extract_and_search failed")
+                raise HTTPException(
+                    status_code=503, detail="failed to process the demo request -- try again"
+                ) from None
+            return DemoResponse(**result)
 
     base_url = oauth_base_url.rstrip("/") if oauth_base_url else None
 
