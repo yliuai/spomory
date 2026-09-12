@@ -16,11 +16,17 @@ PageRank 扩散）+ LightRAG 式双层增量知识图谱 + 轻量级 GRPO 记忆
 - **可插拔 LLM / Embedding 接口**：默认走任意 OpenAI 兼容 API（含国产模型）
   + 本地 `sentence-transformers`（默认 `bge-m3`，中英文混合）。
 - **双层增量知识图谱**：实体层/关系层独立建模，新数据只做抽取+合并，不
-  重建整图；默认本地 `LocalGraphStore`（networkx + SQLite），也有
-  `PostgresGraphStore` 云端实现，两者共用同一套行为契约测试。
+  重建整图；精确匹配到的填充词输入（"谢谢""好的""ok"等）在触发抽取
+  LLM 调用前就会被跳过，因为这类文本本来就不可能含有可抽取的事实——对
+  无鉴权的公开接口是有实际意义的成本防护。默认本地 `LocalGraphStore`
+  （networkx + SQLite），也有 `PostgresGraphStore` 云端实现，两者共用
+  同一套行为契约测试。
 - **HippoRAG 2 式检索**：query 直接匹配三元组而非只匹配实体节点，检索到
   的种子节点做个性化 PageRank 扩散做多跳关联，再拼装成自然语言上下文
-  （带来源时间戳，支持"我什么时候说过 X"这类问题）。
+  （带来源时间戳，支持"我什么时候说过 X"这类问题）。在此基础上的排序
+  会随着一条关系"多久没被检索到"而衰减相关性，也会随着同一个事实"被
+  重复提及的次数"而把相关性加回来（对数衰减，避免压过 PPR 排名本身）——
+  是对下面 ADD/UPDATE/DELETE/NOOP 主动决策的一个被动补充信号。
 - **记忆管理**：ADD/UPDATE/DELETE/NOOP 动作空间，默认规则式策略
   （`RuleBasedPolicy`），也实现了 GRPO 训练策略的完整链路
   （`memory_manager/train_grpo.py`，真实在 GPU 上跑通过）。

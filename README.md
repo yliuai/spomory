@@ -20,14 +20,21 @@ and other clients via an MCP server, with a path to a cloud deployment
   `sentence-transformers` (default `bge-m3`, bilingual Chinese/English).
 - **Dual-layer incremental knowledge graph**: entities and relations are
   modeled as independent layers; new data is only extracted and merged in,
-  never a full rebuild. Defaults to a local `LocalGraphStore`
+  never a full rebuild. Exact-match filler input ("thanks", "好的", "ok", ...)
+  is skipped before it ever reaches the extraction LLM call, since it can't
+  contain an extractable fact — relevant cost protection on any
+  unauthenticated endpoint. Defaults to a local `LocalGraphStore`
   (networkx + SQLite); a `PostgresGraphStore` cloud implementation also
   exists, and both share the same behavioral contract test suite.
 - **HippoRAG 2-style retrieval**: the query is matched directly against
   triples rather than only against entity nodes; the matched seed nodes
   are diffused via personalized PageRank for multi-hop association, then
   assembled into a natural-language context (with source timestamps, so
-  "when did I mention X" is answerable).
+  "when did I mention X" is answerable). Ranking on top of that decays a
+  relation's relevance the longer it's gone without being retrieved, and
+  boosts it back up (log-dampened, so it can't dominate PPR rank) the more
+  times the same fact has been restated — a passive signal alongside the
+  active ADD/UPDATE/DELETE/NOOP decisions below.
 - **Memory management**: an ADD/UPDATE/DELETE/NOOP action space, with a
   rule-based default policy (`RuleBasedPolicy`) and a full GRPO training
   pipeline (`memory_manager/train_grpo.py`, actually run and verified on
