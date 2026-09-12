@@ -1,16 +1,18 @@
+**中文 | [English](modelscope_listing.en.md)**
+
 ## Spomory
 
-An explainable graph-retrieval memory engine, exposed via MCP to Claude Desktop, Cursor, and other clients for persistent long-term memory.
+Spomory 是一个可解释的图检索记忆引擎，通过 MCP 协议为 Claude Desktop、Cursor 等客户端提供长期记忆能力。
 
-**Core approach**: HippoRAG-style retrieval (query→triple matching + personalized PageRank diffusion) + a LightRAG-style incremental knowledge graph (only new text is processed, never a full rebuild) + a GRPO-trained memory-management policy — not hardcoded add/delete rules, but a trained model deciding when to ADD, UPDATE, DELETE, or NOOP a fact.
+**核心技术路线**：HippoRAG 式检索（查询→三元组匹配 + 个性化 PageRank 扩散）+ LightRAG 式增量知识图谱（只处理新增文本，不重建整图）+ GRPO 训练的记忆管理策略——不是硬编码的增删规则，而是训练出来判断该"记/忘/更新"的决策模型。
 
-**Five MCP tools**:
-- `add_memory` — extract facts from text and write them into the memory graph
-- `search_memory` — retrieve and assemble relevant context via graph traversal
-- `forget_memory` — permanently delete a single matched fact (true delete, not a soft flag)
-- `get_graph` — inspect the subgraph around an entity; every retrieval result traces back to a specific triple, not just a similarity score
-- `export_memory` — export the full memory graph as a JSON "memory passport"
+**提供 5 个 MCP 工具**：
+- `add_memory` — 从文本抽取事实并写入记忆图谱
+- `search_memory` — 通过图谱遍历检索并组装相关上下文
+- `forget_memory` — 真删除单条匹配到的事实（不是软删除标记）
+- `get_graph` — 查看某实体周围的关系子图，每条检索结果都能追溯到具体三元组，不只是一个相似度分数
+- `export_memory` — 导出完整记忆图谱为 JSON"记忆护照"
 
-**Deployment**: run locally (data stays in an encrypted-by-default SQLite file on your machine) or connect to the hosted remote server (multi-tenant Postgres, with both API-key and OAuth 2.1 authentication).
+**部署方式**：支持本地部署（数据完全留在本机 SQLite，默认加密）和远程托管（多租户 Postgres，支持 API Key 和 OAuth 2.1 两种鉴权方式）。
 
-Measured LoCoMo/LongMemEval benchmark results — including their limitations — are published in the [GitHub README](https://github.com/yliuai/spomory).
+LoCoMo/LongMemEval 基准测试的实测结果和局限性说明公开在 [GitHub README](https://github.com/yliuai/spomory) 中。
