@@ -123,6 +123,26 @@ def test_relation_relevance_score_penalizes_long_unretrieved_relations():
     assert new_score < stale_score  # never-yet-queried isn't treated as maximally stale
 
 
+def test_relation_relevance_score_favors_frequently_restated_facts():
+    """Epic 12.1: two relations tied on both PPR rank and staleness should
+    score differently once one of them has been restated (mention_count)
+    more than the other -- the Hebbian-style complement to Epic 11.4's
+    staleness penalty, which only tracks retrieval recency."""
+    a, b = Entity(name="甲", type="thing"), Entity(name="乙", type="thing")
+    now = datetime(2026, 6, 1, tzinfo=UTC)
+    rank_position = {a.id: 0, b.id: 0}
+
+    mentioned_once = Relation(subject_id=a.id, predicate="连", object_id=b.id)
+    mentioned_often = Relation(
+        subject_id=a.id, predicate="连", object_id=b.id, mention_count=5
+    )
+
+    once_score = relation_relevance_score(mentioned_once, rank_position, now=now)
+    often_score = relation_relevance_score(mentioned_often, rank_position, now=now)
+
+    assert often_score < once_score  # restated more often -> ranked more relevant
+
+
 def test_select_relevant_relations_ranks_recently_hit_memory_above_long_stale_one():
     a, b = Entity(name="甲", type="thing"), Entity(name="乙", type="thing")
     entities_by_id = {a.id: a, b.id: b}

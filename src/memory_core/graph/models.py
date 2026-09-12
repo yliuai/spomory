@@ -67,6 +67,20 @@ class Relation(BaseModel):
             "gone a long time without being useful. None until the first hit."
         ),
     )
+    mention_count: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "Epic 12.1: how many times this exact fact (same subject/"
+            "predicate/object) has been extracted from new input, including "
+            "the original write. RuleBasedPolicy/TrainedPolicy bump this "
+            "instead of writing a duplicate row when a candidate matches an "
+            "existing relation exactly, so ranking can favor facts the user "
+            "keeps repeating (Hebbian-style) alongside Epic 11.4's staleness "
+            "decay, which only tracks the opposite signal (how long since a "
+            "fact was last *retrieved*, not how often it's been *restated*)."
+        ),
+    )
     valid_from: datetime = Field(
         default_factory=_utcnow,
         description=(

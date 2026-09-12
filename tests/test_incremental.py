@@ -11,8 +11,10 @@ class FakeLLMProvider(LLMProvider):
 
     def __init__(self, triples: list[TripleCandidate]) -> None:
         self._triples = triples
+        self.extract_triples_calls = 0
 
     def extract_triples(self, text: str) -> list[TripleCandidate]:
+        self.extract_triples_calls += 1
         return self._triples
 
     def generate(self, prompt: str, **kwargs: object) -> str:
@@ -50,6 +52,38 @@ def test_three_batches_produce_expected_counts(tmp_path):
 
     assert len(store.all_entities()) == 4  # 张三, 某公司, 北京, 李四
     assert len(store.all_relations()) == 4
+
+
+def test_ingest_skips_llm_call_for_low_information_filler(tmp_path):
+    """Epic 12.4: filler like "thanks"/"好的" can never contain an
+    extractable fact, so it should never reach the LLM -- both to save the
+    API call's cost and because a public, unauthenticated endpoint (e.g.
+    /demo/try) would otherwise let anyone burn real API budget by spamming
+    filler.
+    """
+    store = LocalGraphStore(tmp_path / "g.sqlite3")
+    llm = FakeLLMProvider([_triple("x", "y", "z")])
+    ingestor = IncrementalIngestor(store, llm)
+
+    for filler in ["thanks", "  OK.  ", "好的！", "谢谢你", "在吗"]:
+        result = ingestor.ingest(filler, source_id="doc-filler")
+        assert result.new_relations == 0
+        assert result.new_entities == 0
+
+    assert llm.extract_triples_calls == 0
+    assert store.all_relations() == []
+
+
+def test_ingest_still_extracts_short_but_meaningful_text(tmp_path):
+    """Guards against the filter being too aggressive: a short sentence
+    that happens to contain a real fact must still reach the LLM."""
+    store = LocalGraphStore(tmp_path / "g.sqlite3")
+    llm = FakeLLMProvider([_triple("我", "辞职了", "")])
+    ingestor = IncrementalIngestor(store, llm)
+
+    ingestor.ingest("我辞职了。", source_id="doc-real")
+
+    assert llm.extract_triples_calls == 1
 
 
 def test_incremental_write_time_does_not_blow_up_with_graph_size(tmp_path):

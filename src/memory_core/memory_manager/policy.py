@@ -39,7 +39,9 @@ class RuleBasedPolicy(MemoryPolicy):
 
         same = next((r for r in existing if r.object_id == candidate.object_id), None)
         if same is not None:
-            return MemoryAction(ActionType.NOOP)
+            # Epic 12.1: exact duplicate -- NOOP carries the existing
+            # relation's id so apply_action can bump its mention_count.
+            return MemoryAction(ActionType.NOOP, target_id=same.id)
 
         outdated = existing[0]
         return MemoryAction(
@@ -107,7 +109,9 @@ class TrainedPolicy(MemoryPolicy):
             return MemoryAction(ActionType.ADD, relation=candidate)
         same = next((r for r in existing if r.object_id == candidate.object_id), None)
         if same is not None:
-            return MemoryAction(ActionType.NOOP)  # adopting a duplicate is a no-op either way
+            # Epic 12.1: adopting a duplicate bumps mention_count rather
+            # than being a true no-op (see RuleBasedPolicy above).
+            return MemoryAction(ActionType.NOOP, target_id=same.id)
         outdated = existing[0]
         return MemoryAction(
             ActionType.UPDATE,

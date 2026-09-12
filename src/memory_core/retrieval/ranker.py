@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime
 
 from memory_core.graph.models import Entity, Relation
@@ -12,6 +13,13 @@ from memory_core.graph.models import Entity, Relation
 # long picks up a full extra rank-position's worth of penalty -- noticeable
 # but not enough to bury a memory that's still clearly more relevant.
 _STALENESS_HALF_LIFE_DAYS = 30.0
+
+# Epic 12.1: Hebbian-style complement to the staleness penalty above --
+# staleness only tracks "hasn't been *retrieved* in a while"; this tracks
+# the opposite signal, "has been *restated* many times." log1p keeps the
+# bonus diminishing (mention 2 matters a lot more than mention 20) instead
+# of letting a frequently-repeated fact dominate rank_position outright.
+_MENTION_BONUS_WEIGHT = 1.0
 
 
 def _staleness_penalty(relation: Relation, now: datetime) -> float:
@@ -24,6 +32,12 @@ def _staleness_penalty(relation: Relation, now: datetime) -> float:
     return days_stale / _STALENESS_HALF_LIFE_DAYS
 
 
+def _mention_bonus(relation: Relation) -> float:
+    """`mention_count` starts at 1 (never reinforced), so this is 0 until
+    the fact has actually been restated at least once."""
+    return math.log1p(relation.mention_count - 1) * _MENTION_BONUS_WEIGHT
+
+
 def relation_relevance_score(
     relation: Relation, rank_position: dict[str, int], now: datetime | None = None
 ) -> float:
@@ -31,13 +45,14 @@ def relation_relevance_score(
     endpoints (sum, not min: when relations share one highly-ranked
     endpoint, this still orders them by how relevant their *other* endpoint
     is, instead of leaving them all tied) with Epic 11.4's staleness
-    penalty, so two relations tied on rank are broken by which one has
-    actually been useful more recently.
+    penalty and Epic 12.1's mention-count bonus, so two relations tied on
+    rank are broken by which one has actually been useful more recently and
+    which one the user keeps restating.
     """
     base = rank_position.get(relation.subject_id, len(rank_position)) + rank_position.get(
         relation.object_id, len(rank_position)
     )
-    return base + _staleness_penalty(relation, now or datetime.now(UTC))
+    return base + _staleness_penalty(relation, now or datetime.now(UTC)) - _mention_bonus(relation)
 
 
 def select_relevant_relations(

@@ -21,7 +21,9 @@ def test_duplicate_fact_across_two_ingest_calls_becomes_noop_not_a_new_relation(
     r2 = ingestor.ingest("doc two (same fact repeated)", source_id="doc-2")
     assert r2.noop_relations == 1
     assert r2.new_relations == 0
-    assert len(store.all_relations()) == 1  # not duplicated
+    relations = store.all_relations()
+    assert len(relations) == 1  # not duplicated
+    assert relations[0].mention_count == 2  # Epic 12.1: restated once, bumped from 1
 
 
 def test_conflicting_fact_becomes_an_update_not_a_second_relation():

@@ -34,6 +34,7 @@ def test_rule_based_noops_on_exact_duplicate(tmp_path):
     action = RuleBasedPolicy().decide(candidate, store)
 
     assert action.action_type is ActionType.NOOP
+    assert action.target_id == existing.id  # Epic 12.1: so apply_action can bump mention_count
 
 
 def test_rule_based_updates_when_object_changes(tmp_path):

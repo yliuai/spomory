@@ -29,7 +29,9 @@ class MemoryAction:
     # For ADD: a brand-new relation to write.
     # For UPDATE: an existing relation id plus the new field values to apply.
     # For DELETE: an existing entity or relation id to remove.
-    # For NOOP: unused.
+    # For NOOP: unused, unless it represents an exact-duplicate sighting
+    # (Epic 12.1), in which case it's the existing relation's id and
+    # apply_action bumps its mention_count.
     relation: Relation | None = None
     target_id: str | None = None
     updates: dict[str, object] | None = None
@@ -70,7 +72,17 @@ def apply_action(action: MemoryAction, store: GraphStoreBase) -> None:
             store.delete_relation(action.target_id)
 
     elif action.action_type is ActionType.NOOP:
-        pass
+        if action.target_id is not None:
+            # Epic 12.1: an exact-duplicate sighting, not a true no-op --
+            # bump mention_count so ranking can favor repeatedly-restated
+            # facts. Deliberately not routed through the UPDATE branch
+            # above: the fact's value hasn't changed, so this must not touch
+            # updated_at/valid_from or archive a transaction-time version --
+            # both would misrepresent a repeat mention as a correction.
+            relation = _find_relation(store, action.target_id)
+            store.add_relations(
+                [relation.model_copy(update={"mention_count": relation.mention_count + 1})]
+            )
 
 
 def _find_relation(store: GraphStoreBase, relation_id: str) -> Relation:

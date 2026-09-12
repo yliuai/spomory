@@ -109,6 +109,27 @@ def test_noop_action_is_a_no_op(tmp_path):
     assert len(store.all_relations()) == 1
 
 
+def test_noop_with_target_id_bumps_mention_count_only(tmp_path):
+    """Epic 12.1: a NOOP that carries target_id represents an
+    exact-duplicate sighting, not a true no-op -- it should bump
+    mention_count without touching updated_at/valid_from or creating
+    bitemporal history, since the fact's value hasn't actually changed."""
+    store, _a, _b, relation = _store_with_one_relation(tmp_path)
+    original_updated_at = relation.updated_at
+    original_valid_from = relation.valid_from
+
+    apply_action(MemoryAction(ActionType.NOOP, target_id=relation.id), store)
+
+    relations = store.all_relations()
+    assert len(relations) == 1  # still an upsert, not a duplicate row
+    updated = relations[0]
+    assert updated.mention_count == 2
+    assert updated.updated_at == original_updated_at
+    assert updated.valid_from == original_valid_from
+    # no history entry should have been archived for a mere restatement
+    assert store.relation_as_of(relation.id, datetime.now(UTC)).mention_count == 2
+
+
 def test_add_without_relation_raises(tmp_path):
     store = LocalGraphStore(tmp_path / "g.sqlite3")
     with pytest.raises(ValueError):

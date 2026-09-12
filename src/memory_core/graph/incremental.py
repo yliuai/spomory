@@ -21,6 +21,48 @@ if TYPE_CHECKING:
     from memory_core.memory_manager.policy import MemoryPolicy
 
 
+# Epic 12.4: exact-match, case/punctuation-insensitive filler phrases that
+# carry no extractable fact -- deliberately a small, conservative allowlist
+# rather than a length threshold or fuzzy match, so a short but meaningful
+# sentence ("I quit.") is never mistaken for filler. Skipping these avoids
+# an LLM extraction call (real money, and the only thing standing between a
+# public endpoint like /demo/try and a free way to burn API budget) for
+# input that could never contain a triple anyway.
+_LOW_INFORMATION_PHRASES = {
+    "thanks",
+    "thank you",
+    "ok",
+    "okay",
+    "got it",
+    "sounds good",
+    "sure",
+    "yes",
+    "no",
+    "hi",
+    "hello",
+    "bye",
+    "goodbye",
+    "谢谢",
+    "谢谢你",
+    "好的",
+    "好",
+    "嗯",
+    "在吗",
+    "在",
+    "明白",
+    "明白了",
+    "知道了",
+    "收到",
+}
+
+_STRIP_CHARS = " \t\n\r!?。！？.,，、~～"
+
+
+def _is_low_information(text: str) -> bool:
+    normalized = text.strip(_STRIP_CHARS).lower()
+    return normalized in _LOW_INFORMATION_PHRASES
+
+
 @dataclass
 class IngestResult:
     new_entities: int = 0
@@ -59,8 +101,11 @@ class IncrementalIngestor:
         self.policy = policy
 
     def ingest(self, text: str, source_id: str) -> IngestResult:
-        candidates = self.llm.extract_triples(text)
         result = IngestResult()
+        if _is_low_information(text):
+            return result
+
+        candidates = self.llm.extract_triples(text)
 
         new_entities: list[Entity] = []
         pending_relations: list[Relation] = []
