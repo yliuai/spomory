@@ -39,9 +39,9 @@ and other clients via an MCP server, with a path to a cloud deployment
   rule-based default policy (`RuleBasedPolicy`) and a full GRPO training
   pipeline (`memory_manager/train_grpo.py`, actually run and verified on
   a real GPU).
-- **MCP Server**: exposes five tools — `add_memory`, `search_memory`,
-  `get_graph`, `export_memory`, `forget_memory` — verified end-to-end
-  against a real Claude Desktop.
+- **MCP Server**: exposes six tools — `add_memory`, `search_memory`,
+  `get_graph`, `export_memory`, `forget_memory`, `forget_all_memory` —
+  verified end-to-end against a real Claude Desktop.
 - **Memory passport export + true delete**: a JSON-LD style export format,
   physical deletion, and an audit log.
 - **Multimodal image verification**: image captioning → reuses the text
@@ -167,9 +167,9 @@ spaced words + an English timestamp label otherwise), so English input no
 longer comes out as one run-on word like earlier versions of this demo
 did.
 
-## Quickstart: MCP Server (connecting to Claude Desktop / Cursor)
+## Quickstart: MCP Server (connecting to Claude Desktop / Cursor / Codex CLI)
 
-This MCP server shows up in Claude Desktop / Cursor as **Spomory** (set
+This MCP server shows up in Claude Desktop / Cursor / Codex CLI as **Spomory** (set
 by the `mcpServers` key in the client's config file — see the docs
 below). The Python package name and CLI command are still
 `memory-core` / `memory-core-mcp`; the two are independent of each other.
@@ -185,10 +185,10 @@ Data lives in `~/.memory-core/` by default (override with
 `MEMORY_CORE_DATA_DIR`); setting `DATABASE_URL` switches to the Postgres
 backend instead of local SQLite.
 
-Connecting it to Claude Desktop / Cursor requires registering this
-command's **absolute path** in the client's config file (don't rely on
-`PATH`). Full steps, a config file example, and a real gotcha we actually
-hit (macOS's TCC privacy protection blocks a venv running under
+Connecting it to Claude Desktop / Cursor / Codex CLI requires registering
+this command's **absolute path** in the client's config file (don't rely
+on `PATH`). Full steps, a config file example, and a real gotcha we
+actually hit (macOS's TCC privacy protection blocks a venv running under
 `~/Documents`) are in
 [`docs/mcp_quickstart.en.md`](docs/mcp_quickstart.en.md).
 
@@ -268,7 +268,7 @@ env vars (`LLM_API_KEY`, etc.) or an already-downloaded model cache.
 
 | Doc | Content |
 |---|---|
-| [mcp_quickstart.en.md](docs/mcp_quickstart.en.md) ([中文](docs/mcp_quickstart.md)) | MCP Server install, configuration, connecting Claude Desktop/Cursor, real-world gotchas |
+| [mcp_quickstart.en.md](docs/mcp_quickstart.en.md) ([中文](docs/mcp_quickstart.md)) | MCP Server install, configuration, connecting Claude Desktop/Cursor/Codex CLI, real-world gotchas |
 | [graph_store_interface.en.md](docs/graph_store_interface.en.md) ([中文](docs/graph_store_interface.md)) | Storage adapter interface design |
 | [export_format.en.md](docs/export_format.en.md) ([中文](docs/export_format.md)) | The "memory passport" export format |
 | [dataset_format.en.md](docs/dataset_format.en.md) ([中文](docs/dataset_format.md)) | GRPO training data format and how the real dataset was generated |

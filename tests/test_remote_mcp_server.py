@@ -113,6 +113,52 @@ def test_two_api_keys_see_isolated_memories():
         _truncate()
 
 
+def test_forget_all_memory_only_clears_the_calling_users_data():
+    """Multi-tenant safety for the bulk-delete tool: forget_all_memory must
+    scope to the caller's own user_id (via PostgresGraphStore.delete_all's
+    WHERE user_id = ...), never touching another tenant sharing the same
+    Postgres database -- the exact failure mode a bulk operation on shared
+    storage has to get right."""
+    from cloud_api.auth import AuthStore
+
+    auth_store = AuthStore(":memory:")
+    key_a = auth_store.register_user("a@example.com").raw_key
+    key_b = auth_store.register_user("b@example.com").raw_key
+    server = _build_server(auth_store)
+
+    try:
+        asyncio.run(
+            server.call_tool(
+                "add_memory", {"text": "张三在某公司工作"}, context=_context({"x-api-key": key_a})
+            )
+        )
+        asyncio.run(
+            server.call_tool(
+                "add_memory", {"text": "张三在某公司工作"}, context=_context({"x-api-key": key_b})
+            )
+        )
+
+        asyncio.run(
+            server.call_tool("forget_all_memory", {}, context=_context({"x-api-key": key_a}))
+        )
+
+        result_a = asyncio.run(
+            server.call_tool(
+                "search_memory", {"query": "张三"}, context=_context({"x-api-key": key_a})
+            )
+        )
+        assert "没有找到相关记忆" in str(result_a)
+
+        result_b = asyncio.run(
+            server.call_tool(
+                "search_memory", {"query": "张三"}, context=_context({"x-api-key": key_b})
+            )
+        )
+        assert "张三任职于某公司" in str(result_b)  # user B's data survives user A's wipe
+    finally:
+        _truncate()
+
+
 def test_oauth_authenticated_tool_call_resolves_to_the_tokens_subject():
     """The OAuth mount's counterpart to test_two_api_keys_see_isolated_memories:
     a real tool call authenticated via a Bearer access token (not x-api-key)

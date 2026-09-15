@@ -92,10 +92,13 @@ for these two steps, disclosed honestly:
 - **Complete deletion at any time**: calling `forget_memory` performs a
   physical delete, not a soft-delete flag -- the deletion is recorded in
   a separate audit log (time, how many items deleted), but the deleted
-  data itself is not retained in that log. For safety, each call deletes
-  at most one best-matching relation, to avoid a vague query deleting too
-  much data by mistake (see the "forget_memory real-world verification"
-  section in `docs/mcp_quickstart.md`).
+  data itself is not retained in that log. For safety, `forget_memory`
+  deletes at most one best-matching relation per call, to avoid a vague
+  query deleting too much data by mistake (see the "forget_memory
+  real-world verification" section in `docs/mcp_quickstart.md`); to clear
+  your entire memory graph in one step, call `forget_all_memory` instead
+  -- also a physical delete, including archived history, also recorded in
+  the audit log.
 - If you want to fully close your account (delete your email/credential
   records themselves, not just your memory data), this currently requires
   contacting us for manual handling (see section 7 for contact info) --

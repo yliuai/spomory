@@ -58,6 +58,19 @@ class GraphStoreBase(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def delete_all(self) -> None:
+        """Physically remove every entity, relation, and archived
+        relation-history row for this store (scoped to its user, for
+        multi-tenant backends) -- the bulk counterpart to delete_entity/
+        delete_relation, for a user who wants to clear their whole memory
+        graph instead of forgetting facts one at a time. Must also purge
+        relation-history rows, unlike the per-relation deletes above: a
+        full wipe that left history behind would still let
+        `relation_as_of` resurrect "deleted" facts from archived versions,
+        breaking Epic 7.3's true-delete promise."""
+        raise NotImplementedError
+
+    @abstractmethod
     def all_entities(self) -> list[Entity]:
         raise NotImplementedError
 

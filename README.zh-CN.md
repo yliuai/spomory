@@ -31,7 +31,8 @@ PageRank 扩散）+ LightRAG 式双层增量知识图谱 + 轻量级 GRPO 记忆
   （`RuleBasedPolicy`），也实现了 GRPO 训练策略的完整链路
   （`memory_manager/train_grpo.py`，真实在 GPU 上跑通过）。
 - **MCP Server**：暴露 `add_memory`/`search_memory`/`get_graph`/
-  `export_memory`/`forget_memory` 五个工具，真实在 Claude Desktop 里端到端验证过。
+  `export_memory`/`forget_memory`/`forget_all_memory` 六个工具，真实在
+  Claude Desktop 里端到端验证过。
 - **记忆护照导出 + 真删除**：JSON-LD 风格导出格式，物理删除 + 审计日志。
 - **多模态图片验证**：图片 captioning → 复用文本抽取 → CLIP 二次校验候选
   三元组，诚实定位为"验证"而非"原生跨模态抽取"。
@@ -144,9 +145,9 @@ python demo.py
 具体措辞、实体/关系数量取决于所用 LLM 的抽取结果，每次跑不完全一致，
 但只要环境变量配对了，跑出非空结果就说明链路是通的。
 
-## 快速开始：MCP Server（接入 Claude Desktop / Cursor）
+## 快速开始：MCP Server（接入 Claude Desktop / Cursor / Codex CLI）
 
-这个 MCP Server 在 Claude Desktop / Cursor 里显示的名字是 **Spomory**
+这个 MCP Server 在 Claude Desktop / Cursor / Codex CLI 里显示的名字是 **Spomory**
 （由客户端配置文件 `mcpServers` 下的键名决定，见下方文档）；Python 包名/
 CLI 命令仍然是 `memory-core` / `memory-core-mcp`，两者是独立的。
 
@@ -160,8 +161,8 @@ memory-core-mcp   # 启动后常驻，作为 stdio MCP server 等待客户端连
 数据默认落在 `~/.memory-core/`（可用 `MEMORY_CORE_DATA_DIR` 环境变量改变），
 设置了 `DATABASE_URL` 则改用 Postgres 后端而非本地 SQLite。
 
-把它接到 Claude Desktop / Cursor 需要在客户端配置文件里注册这个命令的**绝对
-路径**（而不是指望 `PATH`），完整步骤、配置文件示例、以及一个真实踩过的坑
+把它接到 Claude Desktop / Cursor / Codex CLI 需要在客户端配置文件里注册这个
+命令的**绝对路径**（而不是指望 `PATH`），完整步骤、配置文件示例、以及一个真实踩过的坑
 （macOS 上 TCC 隐私保护会拦截跑在 `~/Documents` 下的 venv，需要把 venv 装到
 `~/Documents` 之外）见 [`docs/mcp_quickstart.md`](docs/mcp_quickstart.md)。
 
@@ -233,7 +234,7 @@ pytest -m "not slow"      # 跳过需要下载模型/训练的测试，几秒内
 
 | 文档                                                                                                                              | 内容                                                            |
 | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| [mcp_quickstart.md](docs/mcp_quickstart.md) ([English](docs/mcp_quickstart.en.md))                                                | MCP Server 安装、配置、接入 Claude Desktop/Cursor、真实踩坑记录 |
+| [mcp_quickstart.md](docs/mcp_quickstart.md) ([English](docs/mcp_quickstart.en.md))                                                | MCP Server 安装、配置、接入 Claude Desktop/Cursor/Codex CLI、真实踩坑记录 |
 | [graph_store_interface.md](docs/graph_store_interface.md) ([English](docs/graph_store_interface.en.md))                          | 存储适配器接口设计说明                                          |
 | [export_format.md](docs/export_format.md) ([English](docs/export_format.en.md))                                                   | "记忆护照"导出格式                                              |
 | [dataset_format.md](docs/dataset_format.md) ([English](docs/dataset_format.en.md))                                                | GRPO 训练数据格式与真实数据集生成过程                           |

@@ -186,6 +186,13 @@ class LocalGraphStore(GraphStoreBase):
                 self._graph.remove_edge(u, v, key=key)
                 break
 
+    def delete_all(self) -> None:
+        self._conn.execute("DELETE FROM relations")
+        self._conn.execute("DELETE FROM entities")
+        self._conn.execute("DELETE FROM relation_history")
+        self._conn.commit()
+        self._graph.clear()
+
     def all_entities(self) -> list[Entity]:
         return [data["entity"] for _, data in self._graph.nodes(data=True)]
 

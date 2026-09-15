@@ -109,6 +109,26 @@ class GraphStoreContractTests:
         assert store.get_entity(a.id) is not None
         assert store.get_entity(b.id) is not None
 
+    def test_delete_all_clears_everything_including_history(self, store):
+        a, b = Entity(name="a", type="thing"), Entity(name="b", type="thing")
+        store.add_entities([a, b])
+        relation = Relation(subject_id=a.id, predicate="r", object_id=b.id)
+        store.add_relations([relation])
+        # Also archive a history version -- delete_all must purge this too,
+        # or relation_as_of() could resurrect a "deleted" fact from it.
+        store.archive_relation_version(relation, superseded_at=datetime.now(UTC))
+
+        store.delete_all()
+
+        assert store.all_entities() == []
+        assert store.all_relations() == []
+        assert store.relation_as_of(relation.id, datetime.now(UTC)) is None
+
+    def test_delete_all_on_empty_store_is_a_no_op(self, store):
+        store.delete_all()  # must not raise
+        assert store.all_entities() == []
+        assert store.all_relations() == []
+
     def test_all_entities_and_relations(self, store):
         a, b = Entity(name="a", type="thing"), Entity(name="b", type="thing")
         store.add_entities([a, b])

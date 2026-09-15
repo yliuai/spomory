@@ -3,13 +3,15 @@
 **English | [中文](mcp_quickstart.md)**
 
 Covers TASKS.md Epic 6.2-6.4 (internal task tracker, not part of this
-repo). This MCP server shows up in Claude Desktop / Cursor as **Spomory**
-(`src/memory_core/mcp_server/server.py`'s `MCPServer("Spomory")`), and
-exposes five tools: `add_memory`, `search_memory`, `get_graph`,
+repo). This MCP server shows up in Claude Desktop / Cursor / Codex CLI as
+**Spomory** (`src/memory_core/mcp_server/server.py`'s `MCPServer("Spomory")`), and
+exposes six tools: `add_memory`, `search_memory`, `get_graph`,
 `export_memory`, `forget_memory` (finds the single best-matching memory
 for a query and physically deletes it — the first user-facing trigger
-for the "true delete" capability behind `export_memory`). It defaults to
-a local `LocalGraphStore` (SQLite file `memory_core.sqlite3`).
+for the "true delete" capability behind `export_memory`), and
+`forget_all_memory` (physically clears the whole graph in one call — the
+bulk counterpart to `forget_memory`). It defaults to a local
+`LocalGraphStore` (SQLite file `memory_core.sqlite3`).
 
 > The Python package name, the CLI command (`memory-core-mcp`), and the
 > module name in code are all still `memory_core` — only the **name
@@ -28,6 +30,7 @@ a local `LocalGraphStore` (SQLite file `memory_core.sqlite3`).
 | `add_memory` | `text`, `source_id="mcp-session"` | Extracts facts (entities + relations) from a piece of text and writes them into the memory graph; returns counts of new/merged entities and new relations |
 | `search_memory` | `query`, `top_k=10` | Matches the query against stored triples, expands/ranks via Personalized PageRank over the graph, and assembles the result into a natural-language context |
 | `forget_memory` | `query` | Finds the **single** relation that best matches the query and physically deletes it; if either endpoint entity is left with no relations, it's cleaned up too, and the deletion is written to the audit log. Deleting only one match at a time is a deliberate, conservative choice — a query vague enough to match several facts should be narrowed and retried rather than risk deleting the wrong ones silently |
+| `forget_all_memory` | (no parameters) | Physically deletes the entire memory graph in one call — every entity, relation, and archived history version — and writes one audit log entry. `forget_memory` is deliberately one-fact-at-a-time; this is its bulk counterpart, for a clean-slate reset instead of calling `forget_memory` N times |
 | `get_graph` | `entity_name`, `hops=1` | Returns the subgraph around an entity within the given number of hops, as JSON (`entities` + `relations`) |
 | `export_memory` | `subject_id="default"` | Exports the entire memory graph as a JSON "memory passport" — the data-ownership guarantee this server is built around |
 
@@ -67,7 +70,7 @@ export DATABASE_URL=postgresql://user:pass@host:5432/dbname   # optional
 memory-core-mcp
 ```
 
-## Connecting Claude Desktop / Cursor
+## Connecting Claude Desktop / Cursor / Codex CLI
 
 ### ⚠️ On macOS, don't install the runtime under `~/Documents` (or Desktop/Downloads)
 
@@ -149,11 +152,104 @@ Cursor uses an MCP config file with the same shape: globally at
 `~/.cursor/mcp.json`, or per-project at `.cursor/mcp.json` in the project
 root. The content is identical to the Claude Desktop JSON above (the same
 `mcpServers.Spomory` key determines what Cursor displays); restart Cursor
-after editing. **This has not been tested against a real Cursor
-installation** (the dev/verification machine doesn't have Cursor
-installed) — it's inferred by analogy with Cursor's official MCP config
-docs. After connecting it, re-run the "Verification steps" below to
-confirm it actually works.
+after editing. **Verified against a real Cursor installation**
+(2026-09-14): `add_memory`/`search_memory`/`forget_memory` and the rest of
+the tools call correctly from Cursor's agent.
+
+**GUI entry point**: instead of hunting the filesystem for `mcp.json`,
+Cursor's **Customize → MCPs → "+ New MCP Server"** opens
+`~/.cursor/mcp.json` directly in a split editor pane — save it and it
+behaves exactly like editing the file by hand.
+
+**JSON shape for the remote/cloud version** (the local version uses
+`command`+`env`, as in the Claude Desktop example above; the remote
+version uses `url`+`headers` instead):
+
+```json
+{
+  "mcpServers": {
+    "spomory-cloud": {
+      "url": "https://memory.example.com/mcp-apikey/",
+      "headers": {
+        "x-api-key": "<the key from /users/register above>"
+      }
+    }
+  }
+}
+```
+
+(If you're connecting to Spomory's own officially hosted service rather
+than a self-deployed instance, the real `url` is
+`https://api.yliuai.com/mcp-apikey/` — that domain is already public,
+referenced in `docs/privacy_policy_draft.en.md`, not internal
+information.) **This remote connection path has also been verified
+against a real Cursor installation** (2026-09-15).
+
+### Codex CLI
+
+Codex CLI's MCP config is TOML, not the JSON shape Claude Desktop/Cursor
+use — default path `~/.codex/config.toml`, with per-project config also
+supported at `.codex/config.toml` (trusted projects only):
+
+```toml
+[mcp_servers.Spomory]
+command = "/absolute/path/to/memory-core-venv/bin/memory-core-mcp"
+
+[mcp_servers.Spomory.env]
+LLM_API_KEY = "your LLM API key"
+LLM_BASE_URL = "https://api.deepseek.com"
+LLM_MODEL = "deepseek-v4-flash"
+```
+
+Or add it with the official CLI command instead of editing the file by hand:
+
+```bash
+codex mcp add Spomory \
+  --env LLM_API_KEY=your-key --env LLM_BASE_URL=https://api.deepseek.com --env LLM_MODEL=deepseek-v4-flash \
+  -- /absolute/path/to/memory-core-venv/bin/memory-core-mcp
+```
+
+`codex mcp list` confirms it registered. **Verified against a real Codex
+CLI installation** (2026-09-14): tool-call behavior matches Claude
+Desktop/Cursor.
+
+**GUI configuration**: the Codex client (desktop/IDE builds) also has a
+point-and-click way to add a server without hand-editing `config.toml`:
+**Plugins → Manage (top right) → MCPs → "+ Add server"**, which opens a
+"Connect to a custom MCP" form with two connection types, matching
+Spomory's local and remote deployments respectively:
+
+- **STDIO** (local Spomory):
+  - Name: `Spomory`
+  - Command to launch: `/absolute/path/to/memory-core-venv/bin/memory-core-mcp`
+    (same value as `command` in the TOML example above)
+  - Arguments: leave blank
+  - Environment variables: add three rows — `LLM_API_KEY`, `LLM_BASE_URL`,
+    `LLM_MODEL` — same values as the TOML example
+  - Working directory: can be left blank
+
+- **Streamable HTTP** (remote/cloud Spomory, see "Connecting to a remote
+  Spomory" below):
+  - Name: `Spomory Cloud`
+  - URL: `https://memory.example.com/mcp-apikey` (swap in your real
+    deployment's domain — this is the API-key mount, not the OAuth one:
+    this form has no full OAuth-authorization-flow entry point, only a
+    "Bearer token" field and plain headers)
+  - Bearer token env var: leave blank — Spomory's remote API-key mount
+    expects an `x-api-key` header, not `Authorization: Bearer`
+  - Headers from environment variables: add one row, Key = `x-api-key`,
+    Value = the name of a local environment variable (e.g.
+    `SPOMORY_API_KEY`) that you've already set to the key returned by
+    `/users/register` in "Connecting to a remote Spomory" below — reference
+    it indirectly via an env var; don't paste the raw key into the plain
+    "Headers" field (that one stores the literal value straight into
+    Codex's config file).
+
+**Both connection types (STDIO and Streamable HTTP) on this path have been
+verified against a real Codex client** (2026-09-15): the GUI-entered
+configuration connects to Spomory correctly (tested against both the
+local and remote deployments), with tool-call behavior matching the
+CLI/`config.toml` approach above.
 
 ### Where data lives
 
@@ -212,7 +308,7 @@ don't want to run a Python environment locally at all (e.g. connecting from
 Claude's web app, or getting listed on a marketplace like China's ModelScope
 MCP directory that only accepts a reachable HTTPS endpoint),
 `src/memory_core/mcp_server/remote.py` + `src/cloud_api/` provide a second,
-API-key-authenticated remote path. Same five tools, same behavior; the
+API-key-authenticated remote path. Same six tools, same behavior; the
 differences are:
 
 - Each user's memories live in a shared Postgres database, isolated per
@@ -450,10 +546,11 @@ reset/full account management — a magic link is enough for login alone.
 ## Verification status
 
 - **Code + unit tests**: done. `tests/test_mcp_server.py` uses the
-  official `mcp` SDK (v2, `MCPServer`)'s `list_tools()` to verify all five
-  tools register correctly, plus a dedicated test for `forget_memory`
-  covering matched-relation deletion, orphaned-entity cleanup, and the
-  audit log entry; `server.py`'s retrieval/write logic reuses
+  official `mcp` SDK (v2, `MCPServer`)'s `list_tools()` to verify all six
+  tools register correctly, plus dedicated tests for `forget_memory`
+  (matched-relation deletion, orphaned-entity cleanup, audit log entry)
+  and `forget_all_memory` (full-graph wipe including archived history);
+  `server.py`'s retrieval/write logic reuses
   the Epic 1/2 pipeline already verified against a real LLM + embedding
   model (see `tests/test_e2e_real_llm.py`), and switching the storage
   backend between local SQLite and cloud Postgres has also been verified
@@ -464,9 +561,10 @@ reset/full account management — a magic link is enough for login alone.
   `mcp-server-Spomory.log` shows a real `tools/call`, the DB
   (`~/.memory-core/memory_core.sqlite3`) shows a real relation written by
   `add_memory`, and the following `search_memory` call correctly
-  triggered embedding-based retrieval. Cursor hasn't been tested on this
-  machine (not installed); see the "Cursor" section above for setup
-  steps.
+  triggered embedding-based retrieval. **Cursor and Codex CLI have also
+  been verified against real installations (2026-09-14)**, with tool-call
+  behavior matching Claude Desktop; see the "Cursor" and "Codex CLI"
+  sections above for setup steps.
 - **`forget_memory` verified live**: saying "remember: I have a cat named
   Bo" in Claude Desktop extracted two relations (`I-have-cat`,
   `cat-named-Bo`); saying "forget that I have a cat" afterward had
@@ -479,6 +577,13 @@ reset/full account management — a magic link is enough for login alone.
   fully erase. Confirmed against both the database and the
   `memory_core_audit.sqlite3` audit entry
   (`{"entities_deleted": 1, "relations_deleted": 1}`).
+- **`forget_all_memory` (added 2026-09-14)**: a direct response to that
+  limitation showing up in real use — an account with 4 stored facts
+  wanting a reset meant calling `forget_memory` 4 times, each one gated
+  behind a manual "Allow once" approval in Claude Desktop.
+  `forget_all_memory` exists to fix exactly that observed friction: one
+  call physically deletes the whole graph (including archived history),
+  no need to narrow and retry per fact.
 
 - **Remote access (Epic 11.5) — honest verification status**: the
   `user_id`-isolation added to `PostgresGraphStore` and mounting the MCP

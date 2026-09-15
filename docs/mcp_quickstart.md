@@ -2,12 +2,13 @@
 
 **[English](mcp_quickstart.en.md) | 中文**
 
-对应 TASKS.md Epic 6.2-6.4。这个 MCP Server 在 Claude Desktop / Cursor
-里显示的名字是 **Spomory**（`src/memory_core/mcp_server/server.py` 里
-`MCPServer("Spomory")`），暴露五个工具：`add_memory`、`search_memory`、
+对应 TASKS.md Epic 6.2-6.4。这个 MCP Server 在 Claude Desktop / Cursor /
+Codex CLI 里显示的名字是 **Spomory**（`src/memory_core/mcp_server/server.py` 里
+`MCPServer("Spomory")`），暴露六个工具：`add_memory`、`search_memory`、
 `get_graph`、`export_memory`、`forget_memory`（找到和查询最匹配的一条
 记忆并物理删除，是 `export_memory` 背后"真删除"能力第一次有了用户能在
-对话里直接触发的入口），默认用本地 `LocalGraphStore`（SQLite 文件
+对话里直接触发的入口）、`forget_all_memory`（一次性清空整个记忆图谱，
+`forget_memory` 的批量版本），默认用本地 `LocalGraphStore`（SQLite 文件
 `memory_core.sqlite3`）。
 
 > Python 包名、CLI 命令（`memory-core-mcp`）、代码里的模块名都还叫
@@ -24,6 +25,7 @@
 | `add_memory` | `text`, `source_id="mcp-session"` | 从一段文本里抽取事实（实体+关系）写入记忆图谱，返回新增/合并的实体数和新增关系数 |
 | `search_memory` | `query`, `top_k=10` | 先做三元组匹配，再用 Personalized PageRank 在图上扩展排序，组装成一段自然语言上下文返回 |
 | `forget_memory` | `query` | 找到与查询语义最匹配的**一条**关系并物理删除；删除后若某个端点实体变成孤立节点也一并清理，并写入审计日志。每次只删一条是故意的保守设计——模糊的查询应该改用更具体的措辞重试，而不是一次性删掉多条 |
+| `forget_all_memory` | （无参数） | 一次性物理删除整个记忆图谱——所有实体、关系、以及归档的历史版本，写入一条审计日志。`forget_memory` 刻意一次只删一条，这个是它的批量版本，给想要"清空重来"的场景用，不用把 `forget_memory` 调 N 次 |
 | `get_graph` | `entity_name`, `hops=1` | 返回以某实体为中心、指定跳数内的子图，JSON 格式（`entities` + `relations`） |
 | `export_memory` | `subject_id="default"` | 把整个记忆图谱导出成 JSON 格式的"记忆护照"（memory passport），对应"数据自主权"承诺 |
 
@@ -62,7 +64,7 @@ export DATABASE_URL=postgresql://user:pass@host:5432/dbname   # 可选
 memory-core-mcp
 ```
 
-## 接入 Claude Desktop / Cursor
+## 接入 Claude Desktop / Cursor / Codex CLI
 
 ### ⚠️ macOS 上不要把运行时装在 `~/Documents`（或 Desktop/Downloads）下
 
@@ -134,9 +136,93 @@ Desktop 启动子进程时也不一定继承你终端的 `PATH`，绝对路径�
 Cursor 用同样结构的 MCP 配置文件：全局配置在 `~/.cursor/mcp.json`，只想
 对单个项目生效则放在项目根目录的 `.cursor/mcp.json`。内容和上面 Claude
 Desktop 的 JSON 完全一样（同样是 `mcpServers.Spomory` 这个键决定 Cursor
-里显示的名字），改完重启 Cursor 生效。这部分**没有在真实 Cursor 环境里
-测试过**（开发/验证机器上没装 Cursor），只是基于 Cursor 官方 MCP 配置文档
-的结构类比得出，接入后建议按下面"验证步骤"再实测一遍确认。
+里显示的名字），改完重启 Cursor 生效。**已在真实 Cursor 环境里验证过**
+（2026-09-14）：`add_memory`/`search_memory`/`forget_memory` 等工具能正常
+被 Cursor 里的 Agent 调用。
+
+**图形化入口**：不用自己去翻文件系统找 `mcp.json`，Cursor 里
+**Customize → MCPs → "+ New MCP Server"** 会直接在编辑器右侧分栏打开
+`~/.cursor/mcp.json`，改完保存即可，效果跟手动编辑这个文件完全一样。
+
+**远程/云端版的 JSON 结构**（本地版是 `command`+`env`，见上面 Claude
+Desktop 的例子；远程版换成 `url`+`headers`）：
+
+```json
+{
+  "mcpServers": {
+    "spomory-cloud": {
+      "url": "https://memory.example.com/mcp-apikey/",
+      "headers": {
+        "x-api-key": "<上面 /users/register 拿到的 key>"
+      }
+    }
+  }
+}
+```
+
+（如果连的是 Spomory 官方托管的云端服务而不是自己部署的实例，真实的
+`url` 是 `https://api.yliuai.com/mcp-apikey/`，这个域名在
+`docs/privacy_policy_draft.md` 里已经公开过，不是内部信息。）**这个远程
+接入方式也已在真实 Cursor 环境里验证过**（2026-09-15）。
+
+### Codex CLI
+
+Codex CLI 的 MCP 配置是 TOML 格式，跟上面 Claude Desktop/Cursor 的 JSON
+结构不一样——默认路径 `~/.codex/config.toml`，也支持项目级配置
+`.codex/config.toml`（仅限受信任的项目）：
+
+```toml
+[mcp_servers.Spomory]
+command = "/绝对路径/memory-core-venv/bin/memory-core-mcp"
+
+[mcp_servers.Spomory.env]
+LLM_API_KEY = "你的 LLM API Key"
+LLM_BASE_URL = "https://api.deepseek.com"
+LLM_MODEL = "deepseek-v4-flash"
+```
+
+也可以用官方 CLI 命令添加，不用手动改文件：
+
+```bash
+codex mcp add Spomory \
+  --env LLM_API_KEY=你的Key --env LLM_BASE_URL=https://api.deepseek.com --env LLM_MODEL=deepseek-v4-flash \
+  -- /绝对路径/memory-core-venv/bin/memory-core-mcp
+```
+
+`codex mcp list` 可以确认注册成功。**已在真实 Codex CLI 环境里验证过**
+（2026-09-14）：工具调用行为和 Claude Desktop/Cursor 一致。
+
+**图形化界面配置**：Codex 客户端（桌面/IDE 版本）也提供了不用手改
+`config.toml` 的图形化添加入口：**Plugins → 右上角 Manage → MCPs →
+"+ Add server"**，进去之后是"Connect to a custom MCP"表单，Type 分两种，
+分别对应本地版和远程版 Spomory：
+
+- **STDIO**（本地版）：
+  - Name：`Spomory`
+  - Command to launch：`/绝对路径/memory-core-venv/bin/memory-core-mcp`
+    （跟上面 TOML 例子里的 `command` 是同一个值）
+  - Arguments：留空
+  - Environment variables：加三行，`LLM_API_KEY`/`LLM_BASE_URL`/
+    `LLM_MODEL`，值跟上面 TOML 例子一致
+  - Working directory：可留空
+
+- **Streamable HTTP**（远程/云端版，见下面"接入远程 Spomory"一节）：
+  - Name：`Spomory Cloud`
+  - URL：`https://memory.example.com/mcp-apikey`（换成实际部署的域名，
+    走的是 API Key 挂载点，不是 OAuth 挂载点——这个表单没有走完整
+    OAuth 授权流程的入口，只有"Bearer token"和普通请求头两种方式）
+  - Bearer token env var：留空不用——Spomory 远程服务的 API Key 挂载点
+    认的是 `x-api-key` 请求头，不是 `Authorization: Bearer`
+  - Headers from environment variables：加一行，Key 填 `x-api-key`，
+    Value 填一个本机环境变量名（比如 `SPOMORY_API_KEY`，需要提前在
+    系统里设置好这个环境变量，值是"接入远程 Spomory"一节里
+    `/users/register` 返回的那把 key）——用环境变量间接引用，不要把
+    key 明文填进 Headers 那个字段（那个是字面值，会明文存进 Codex 的
+    配置文件里）
+
+**这条路径（STDIO 和 Streamable HTTP 两种）已在真实 Codex 客户端里验证
+通过**（2026-09-15）：图形化表单填进去的配置能正常连上 Spomory（本地版
+和远程版都测过），工具调用行为跟前面 CLI/`config.toml` 方式一致。
 
 ### 数据文件存放位置
 
@@ -183,7 +269,7 @@ Documents/Desktop/Downloads 下的普通目录，同样是为了避开上面那�
 接入方式。如果你不想在自己电脑上装 Python 环境（比如想直接从手机/网页版
 Claude 连，或者要接入国内"魔搭 MCP 广场"这类只收远程 HTTPS 端点的平台），
 `src/memory_core/mcp_server/remote.py` + `src/cloud_api/` 提供了第二种、走
-API Key 鉴权的远程接入方式，同样的五个工具，行为一致，区别只是：
+API Key 鉴权的远程接入方式，同样的六个工具，行为一致，区别只是：
 
 - 每个用户的记忆存在共享 Postgres 数据库里的一张按 `user_id` 隔离的图
   （`PostgresGraphStore(dsn, user_id)`），不是本地 SQLite 文件。
@@ -390,8 +476,9 @@ _configured_origin_and_rejects_others`）。测试过程中发现两个测试设
 ## 验证状态
 
 - **代码 + 单元测试**：已完成。`tests/test_mcp_server.py` 用官方 `mcp` SDK
-  （v2，`MCPServer`）的 `list_tools()` 验证五个工具都正确注册，另有专门测试
-  验证 `forget_memory` 删除匹配关系、清理孤立实体、写入审计日志三件事；`server.py`
+  （v2，`MCPServer`）的 `list_tools()` 验证六个工具都正确注册，另有专门测试
+  验证 `forget_memory` 删除匹配关系、清理孤立实体、写入审计日志三件事，以及
+  `forget_all_memory` 清空整个图谱（含归档历史）三件事；`server.py`
   的检索/写入逻辑复用了已经用真实 LLM+embedding 验证过的 Epic 1/2 pipeline
   （见 `tests/test_e2e_real_llm.py`），存储后端在本地 SQLite 和云端 Postgres
   之间的切换也做了功能对等性验证（`tests/test_postgres_mcp_parity.py`）。
@@ -400,6 +487,8 @@ _configured_origin_and_rejects_others`）。测试过程中发现两个测试设
   `mcp-server-Spomory.log` 里能看到真实的 `tools/call`，DB
   （`~/.memory-core/memory_core.sqlite3`）里能看到 `add_memory` 真实写入
   的新关系，紧接着的 `search_memory` 调用也正常触发了 embedding 检索。
+  **Cursor 和 Codex CLI 也已在真实环境里验证过（2026-09-14）**，工具
+  调用行为跟 Claude Desktop 一致，接入步骤见上面"Cursor""Codex CLI"两节。
 - **`forget_memory` 真实验证**：在 Claude Desktop 里说"记住：我养了一只叫
   小白的猫"，抽取出了两条关系（`我-养了-猫`、`猫-叫-小白`）；接着说"忘记我
   养猫这件事"，`forget_memory` 只删除了语义最匹配的那一条（`猫-叫-小白`及
@@ -408,7 +497,12 @@ _configured_origin_and_rejects_others`）。测试过程中发现两个测试设
   可能需要多次调用 `forget_memory`（用更具体的措辞）才能彻底清干净。
   数据库和 `memory_core_audit.sqlite3` 的审计记录
   （`{"entities_deleted": 1, "relations_deleted": 1}`）都核实了这个行为。
-  Cursor 未在本机测试过（未安装），接入步骤见上面"Cursor"一节。
+- **`forget_all_memory`（2026-09-14 加入）**：直接源自上面这条限制在真实
+  使用中的具体体现——一个账号里存了 4 条事实，想清空重来，Claude 只能
+  把 `forget_memory` 调 4 次，每次都要在 Claude Desktop 里手动点一次
+  "Allow once"授权。`forget_all_memory` 就是为了解决这个真实观察到的
+  摩擦：一次调用物理删除整个图谱（含归档的历史版本），不需要逐条缩小
+  查询范围重试。
 
 - **远程接入（Epic 11.5）——诚实的验证状态**：`PostgresGraphStore` 加
   `user_id` 隔离、`cloud_api/app.py` 挂载 MCP streamable-http 端点这两块，

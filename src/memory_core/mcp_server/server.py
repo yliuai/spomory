@@ -35,7 +35,7 @@ def build_server(
     audit_log: AuditLog | None = None,
     user_id: str = "local",
 ) -> MCPServer:
-    """Wire the five memory tools up against a given store/llm/embedder.
+    """Wire the six memory tools up against a given store/llm/embedder.
 
     Kept as a factory function (rather than module-level globals) so tests
     can inject fakes and so Epic 8.2's cloud backend swap is a one-line change
@@ -77,6 +77,19 @@ def build_server(
             usage_tracker.record_event(user_id, "forget_memory")
         return _forget_memory(store, embedder, query, audit_log, user_id)
 
+    @mcp.tool(annotations=_TOOL_ANNOTATIONS["forget_all_memory"])
+    def forget_all_memory() -> str:
+        """Permanently delete the entire memory graph -- every entity and relation.
+
+        `forget_memory` is deliberately one-fact-at-a-time; this is its
+        bulk counterpart for a user who wants a clean slate (e.g. before
+        re-testing, or a genuine full data wipe) instead of narrowing and
+        retrying a query N times.
+        """
+        if usage_tracker is not None:
+            usage_tracker.record_event(user_id, "forget_all_memory")
+        return _forget_all_memory(store, audit_log, user_id)
+
     @mcp.tool(annotations=_TOOL_ANNOTATIONS["get_graph"])
     def get_graph(entity_name: str, hops: int = 1) -> str:
         """Return the subgraph around `entity_name` as JSON."""
@@ -92,7 +105,7 @@ def build_server(
 
 # Anthropic Connector Directory requires every tool to declare these hints;
 # shared between the local (stdio) and remote (HTTP) servers since both
-# register the same five tools with identical semantics.
+# register the same six tools with identical semantics.
 _TOOL_ANNOTATIONS = {
     "add_memory": ToolAnnotations(
         title="Add memory", read_only_hint=False, destructive_hint=False, open_world_hint=False
@@ -105,6 +118,9 @@ _TOOL_ANNOTATIONS = {
     ),
     "forget_memory": ToolAnnotations(
         title="Forget memory", read_only_hint=False, destructive_hint=True, open_world_hint=False
+    ),
+    "forget_all_memory": ToolAnnotations(
+        title="Forget all memory", read_only_hint=False, destructive_hint=True, open_world_hint=False
     ),
     "get_graph": ToolAnnotations(
         title="Get memory graph", read_only_hint=True, destructive_hint=False, open_world_hint=False
@@ -181,6 +197,22 @@ def _forget_memory(
         )
 
     return f"已忘记：{forgotten}"
+
+
+def _forget_all_memory(store: GraphStoreBase, audit_log: AuditLog | None, user_id: str) -> str:
+    entities_deleted = len(store.all_entities())
+    relations_deleted = len(store.all_relations())
+    if entities_deleted == 0 and relations_deleted == 0:
+        return "记忆图谱是空的，没有可以忘记的内容。"
+
+    store.delete_all()
+
+    if audit_log is not None:
+        audit_log.record_deletion(
+            user_id=user_id, entities_deleted=entities_deleted, relations_deleted=relations_deleted
+        )
+
+    return f"已清空整个记忆图谱：删除了 {entities_deleted} 个实体、{relations_deleted} 条关系"
 
 
 def _get_graph(store: GraphStoreBase, entity_name: str, hops: int) -> str:

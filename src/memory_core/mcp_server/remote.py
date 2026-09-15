@@ -1,4 +1,4 @@
-"""Remote, HTTP-reachable MCP server (Epic 11.5): the same five tools as
+"""Remote, HTTP-reachable MCP server (Epic 11.5): the same six tools as
 `server.py`, authenticated per request instead of a single fixed local
 user, and backed by one `PostgresGraphStore` per authenticated `user_id`
 sharing one Postgres database.
@@ -46,6 +46,7 @@ from memory_core.mcp_server.server import (
     _TOOL_ANNOTATIONS,
     _add_memory,
     _export_memory,
+    _forget_all_memory,
     _forget_memory,
     _get_graph,
     _search_memory,
@@ -116,7 +117,7 @@ def _register_tools(
     audit_log: AuditLog | None,
     resolve_user_id: Callable[[Context], str],
 ) -> None:
-    """Registers the five tools on `mcp`. `resolve_user_id` is the only
+    """Registers the six tools on `mcp`. `resolve_user_id` is the only
     thing that differs between the API-key mount and the OAuth mount --
     everything downstream (store resolution, usage/audit recording, the
     actual tool logic) is identical."""
@@ -148,6 +149,15 @@ def _register_tools(
             usage_tracker.record_event(user_id, "forget_memory")
         return _forget_memory(store, embedder, query, audit_log, user_id)
 
+    @mcp.tool(annotations=_TOOL_ANNOTATIONS["forget_all_memory"])
+    def forget_all_memory(ctx: Context) -> str:
+        """Permanently delete the entire memory graph -- every entity and relation."""
+        user_id = resolve_user_id(ctx)
+        store, _ = stores.resolve(user_id)
+        if usage_tracker is not None:
+            usage_tracker.record_event(user_id, "forget_all_memory")
+        return _forget_all_memory(store, audit_log, user_id)
+
     @mcp.tool(annotations=_TOOL_ANNOTATIONS["get_graph"])
     def get_graph(entity_name: str, ctx: Context, hops: int = 1) -> str:
         """Return the subgraph around `entity_name` as JSON."""
@@ -172,7 +182,7 @@ def build_remote_server(
     audit_log: AuditLog | None = None,
     stores: _UserStores | None = None,
 ) -> MCPServer:
-    """Same five tools as `server.build_server`, multi-tenant over HTTP,
+    """Same six tools as `server.build_server`, multi-tenant over HTTP,
     authenticated via the `x-api-key` header. Pass `stores` explicitly to
     share its per-user cache with `build_oauth_remote_server` when mounting
     both on the same deployment."""
@@ -197,7 +207,7 @@ def build_oauth_remote_server(
     audit_log: AuditLog | None = None,
     stores: _UserStores | None = None,
 ) -> MCPServer:
-    """Same five tools, same per-user store cache, but this mount requires a
+    """Same six tools, same per-user store cache, but this mount requires a
     real OAuth 2.1 + PKCE `Authorization: Bearer` token -- the mount
     Anthropic's Connector Directory review actually connects to.
     `client_registration_options.enabled=True` because MCP clients register

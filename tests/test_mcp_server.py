@@ -20,7 +20,7 @@ class FakeEmbeddingProvider:
         return np.array([[hash(t) % 997, 1.0] for t in texts], dtype=float)
 
 
-def test_all_five_tools_are_registered():
+def test_all_six_tools_are_registered():
     store = LocalGraphStore(":memory:")
     server = build_server(store, FakeLLMProvider([]), FakeEmbeddingProvider())
 
@@ -32,6 +32,7 @@ def test_all_five_tools_are_registered():
         "get_graph",
         "export_memory",
         "forget_memory",
+        "forget_all_memory",
     }
 
 
@@ -116,3 +117,41 @@ def test_forget_memory_deletes_matched_relation_and_orphaned_entities():
     records = audit_log.query("u1")
     assert len(records) == 1
     assert records[0].detail == {"entities_deleted": 1, "relations_deleted": 1}
+
+
+def test_forget_all_memory_clears_the_whole_graph():
+    """Real user-reported gap: forget_memory is deliberately one-fact-at-a-
+    time, so a user wanting a clean slate had to call it once per fact
+    (confirmed via Claude Desktop's per-call approval prompt, N times in a
+    row for N facts). forget_all_memory is the bulk counterpart."""
+    from memory_core.graph.models import Entity, Relation
+
+    store = LocalGraphStore(":memory:")
+    zhangsan = Entity(name="张三", type="person")
+    company = Entity(name="某公司", type="organization")
+    store.add_entities([zhangsan, company])
+    store.add_relations([Relation(subject_id=zhangsan.id, predicate="任职于", object_id=company.id)])
+
+    audit_log = AuditLog(":memory:")
+    server = build_server(
+        store, FakeLLMProvider([]), FakeEmbeddingProvider(), audit_log=audit_log, user_id="u1"
+    )
+
+    result = asyncio.run(server.call_tool("forget_all_memory", {}))
+    assert "2" in str(result) and "1" in str(result)  # 2 entities, 1 relation
+
+    assert store.all_entities() == []
+    assert store.all_relations() == []
+
+    records = audit_log.query("u1")
+    assert len(records) == 1
+    assert records[0].detail == {"entities_deleted": 2, "relations_deleted": 1}
+
+
+def test_forget_all_memory_on_empty_graph_is_a_no_op():
+    store = LocalGraphStore(":memory:")
+    server = build_server(store, FakeLLMProvider([]), FakeEmbeddingProvider())
+
+    result = asyncio.run(server.call_tool("forget_all_memory", {}))
+
+    assert "空" in str(result)

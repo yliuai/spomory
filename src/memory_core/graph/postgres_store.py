@@ -162,6 +162,11 @@ class PostgresGraphStore(GraphStoreBase):
             "DELETE FROM relations WHERE id = %s AND user_id = %s", (relation_id, self._user_id)
         )
 
+    def delete_all(self) -> None:
+        self._conn.execute("DELETE FROM relations WHERE user_id = %s", (self._user_id,))
+        self._conn.execute("DELETE FROM entities WHERE user_id = %s", (self._user_id,))
+        self._conn.execute("DELETE FROM relation_history WHERE user_id = %s", (self._user_id,))
+
     def all_entities(self) -> list[Entity]:
         rows = self._conn.execute(
             "SELECT data FROM entities WHERE user_id = %s", (self._user_id,)
