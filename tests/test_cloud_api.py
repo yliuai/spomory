@@ -298,6 +298,23 @@ def test_demo_with_query_also_returns_context():
     assert "张三" in body["context"]
 
 
+def test_demo_redacts_secrets_before_the_llm_call():
+    """Epic 13.1: /demo/try is public and unauthenticated -- a visitor
+    pasting a real secret to "see what the demo does" must not have it
+    forwarded to the LLM provider in plaintext, even though nothing here
+    gets persisted."""
+    store = AuthStore(":memory:")
+    llm = FakeLLMProvider([_triple("张三", "任职于", "某公司")])
+    client = TestClient(create_app(auth_store=store, demo_llm=llm, demo_embedder=FakeEmbeddingProvider()))
+
+    secret = "sk-ant-api03-" + "x" * 40
+    resp = client.post("/demo/try", json={"text": f"密钥是 {secret}"})
+
+    assert resp.status_code == 200
+    assert secret not in llm.last_text
+    assert "REDACTED" in llm.last_text
+
+
 def test_demo_never_persists_anything():
     # Same store backs both the demo endpoint and a real registered user --
     # calling /demo/try must not touch that store at all.

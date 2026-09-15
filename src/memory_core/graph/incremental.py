@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from memory_core.llm.base import LLMProvider
+from memory_core.llm.redact import redact_secrets
 
 from .models import Entity, Provenance, Relation
 from .store import GraphStoreBase
@@ -105,6 +106,7 @@ class IncrementalIngestor:
         if _is_low_information(text):
             return result
 
+        text = redact_secrets(text)
         candidates = self.llm.extract_triples(text)
 
         new_entities: list[Entity] = []

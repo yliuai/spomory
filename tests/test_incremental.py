@@ -12,9 +12,11 @@ class FakeLLMProvider(LLMProvider):
     def __init__(self, triples: list[TripleCandidate]) -> None:
         self._triples = triples
         self.extract_triples_calls = 0
+        self.last_text: str | None = None
 
     def extract_triples(self, text: str) -> list[TripleCandidate]:
         self.extract_triples_calls += 1
+        self.last_text = text
         return self._triples
 
     def generate(self, prompt: str, **kwargs: object) -> str:
@@ -84,6 +86,22 @@ def test_ingest_still_extracts_short_but_meaningful_text(tmp_path):
     ingestor.ingest("我辞职了。", source_id="doc-real")
 
     assert llm.extract_triples_calls == 1
+
+
+def test_ingest_redacts_secrets_before_the_llm_call(tmp_path):
+    """Epic 13.1: a secret pasted into a message must never reach the
+    extraction LLM in plaintext -- only the matched token is replaced, the
+    surrounding fact ("the key is used in auth.ts") still reaches the LLM."""
+    store = LocalGraphStore(tmp_path / "g.sqlite3")
+    llm = FakeLLMProvider([_triple("我", "使用", "密钥")])
+    ingestor = IncrementalIngestor(store, llm)
+
+    secret = "sk-ant-api03-" + "x" * 40
+    ingestor.ingest(f"密钥是 {secret}，用在 auth.ts 里", source_id="doc-secret")
+
+    assert secret not in llm.last_text
+    assert "REDACTED" in llm.last_text
+    assert "auth.ts" in llm.last_text  # surrounding fact is preserved
 
 
 def test_incremental_write_time_does_not_blow_up_with_graph_size(tmp_path):

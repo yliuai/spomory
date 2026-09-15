@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from memory_core.graph.models import Entity, Relation
 from memory_core.llm.base import LLMProvider
+from memory_core.llm.redact import redact_secrets
 from memory_core.retrieval.ppr import personalized_pagerank, rank_entities
 from memory_core.retrieval.query_match import match_query_to_triples
 from memory_core.retrieval.ranker import build_context
@@ -35,6 +36,11 @@ def extract_and_search(
     if len(text) > MAX_DEMO_TEXT_LENGTH:
         raise DemoTextTooLongError(f"text must be at most {MAX_DEMO_TEXT_LENGTH} characters")
 
+    # Epic 13.1: this endpoint is public and unauthenticated -- a visitor
+    # pasting a real secret to "see what the demo does" would otherwise
+    # send it straight to the LLM provider, even though nothing here gets
+    # persisted.
+    text = redact_secrets(text)
     candidates = llm.extract_triples(text)
 
     entities_by_name: dict[str, Entity] = {}
