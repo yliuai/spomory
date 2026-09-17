@@ -1,0 +1,11 @@
+.venv
+.git
+dist_pypi
+uv.lock
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.DS_Store
+tests
+benchmarks
