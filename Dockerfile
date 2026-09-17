@@ -10,7 +10,12 @@
 #     spomory
 FROM python:3.11-slim
 
-RUN pip install --no-cache-dir "spomory[llm,embedding,mcp]"
+# sentence-transformers pulls in torch; installing the CPU-only wheel first
+# keeps pip from resolving the default CUDA build, which drags in several
+# GB of GPU libraries this container (a CPU-bound extraction/embedding
+# sidecar, no GPU available in typical hosting) never uses.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir "spomory[llm,embedding,mcp]"
 
 ENV MEMORY_CORE_DATA_DIR=/data
 VOLUME ["/data"]
