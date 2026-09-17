@@ -148,15 +148,26 @@ python demo.py
 ## 快速开始：MCP Server（接入 Claude Desktop / Cursor / Codex CLI）
 
 这个 MCP Server 在 Claude Desktop / Cursor / Codex CLI 里显示的名字是 **Spomory**
-（由客户端配置文件 `mcpServers` 下的键名决定，见下方文档）；Python 包名/
-CLI 命令仍然是 `memory-core` / `memory-core-mcp`，两者是独立的。
+（由客户端配置文件 `mcpServers` 下的键名决定，见下方文档）；源码里的包名/
+CLI 命令仍然是 `memory-core` / `memory-core-mcp`，PyPI 上发布的包名是
+`spomory`（对应命令 `spomory-mcp`，和 `memory-core-mcp` 是同一个入口），
+这些和显示名字是独立的两件事。
 
-装好 `mcp` 依赖组、设置好 `LLM_API_KEY` 等环境变量后：
+设置好 `LLM_API_KEY` 等环境变量后：
 
 ```bash
+# 最简单：直接装发布到 PyPI 的包，不用克隆仓库
+pip install "spomory[llm,embedding,mcp]"
+spomory-mcp   # 启动后常驻，作为 stdio MCP server 等待客户端连接
+
+# 或者，基于本仓库的克隆：
 uv pip install -e ".[llm,embedding,mcp]"
-memory-core-mcp   # 启动后常驻，作为 stdio MCP server 等待客户端连接
+memory-core-mcp
 ```
+
+仓库里也带了一份 [`Dockerfile`](Dockerfile)（stdio 传输——要用
+`docker run -i` 启动），给那些从容器镜像而不是包管理器部署的 MCP
+目录/托管平台用。
 
 数据默认落在 `~/.memory-core/`（可用 `MEMORY_CORE_DATA_DIR` 环境变量改变），
 设置了 `DATABASE_URL` 则改用 Postgres 后端而非本地 SQLite。

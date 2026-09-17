@@ -11,9 +11,11 @@ Codex CLI 里显示的名字是 **Spomory**（`src/memory_core/mcp_server/server
 `forget_memory` 的批量版本），默认用本地 `LocalGraphStore`（SQLite 文件
 `memory_core.sqlite3`）。
 
-> Python 包名、CLI 命令（`memory-core-mcp`）、代码里的模块名都还叫
-> `memory_core`，只有**注册到客户端的显示名字**改成了 Spomory——这两者是
-> 独立的：`command` 字段指向哪个可执行文件决定实际跑什么代码，
+> 可导入的模块名、源码安装用的包名都还叫 `memory_core`/`memory-core`；
+> 发布到 PyPI 上的包名是 `spomory`，对应两个等价的 CLI 命令
+> `memory-core-mcp`、`spomory-mcp`（同一个入口函数，用哪个都行）。只有
+> **注册到客户端的显示名字**需要精确写成 Spomory，Claude Desktop/Cursor/
+> Codex CLI 才会这么显示——这两者是独立的：`command` 字段指向哪个可执行文件决定实际跑什么代码，
 > `mcpServers` 这个 JSON 对象里的键才是 Claude Desktop/Cursor 界面上显示、
 > 以及日志文件命名（`mcp-server-<键名>.log`）用的名字。改名时两处都要跟着
 > 改，否则日志文件名和显示名字对不上，排查问题时容易搞混。
@@ -32,10 +34,17 @@ Codex CLI 里显示的名字是 **Spomory**（`src/memory_core/mcp_server/server
 ## 安装
 
 ```bash
-uv pip install "memory-core[llm,embedding,mcp] @ git+https://github.com/<org>/<repo>.git"
-# 或本地开发：
+# 最简单：直接装发布到 PyPI 的包，不用克隆仓库
+pip install "spomory[llm,embedding,mcp]"
+
+# 或者，基于源码本地开发：
 uv pip install -e ".[llm,embedding,mcp]"
 ```
+
+仓库根目录也带了一份 [`Dockerfile`](../Dockerfile)，给那些从容器镜像
+而不是包管理器部署的 MCP 目录/托管平台用（比如 Glama）。它是 stdio
+server，要用 `docker run -i` 启动；挂载 `/data` 卷可以让数据在容器重启
+后保留。
 
 ## 配置
 

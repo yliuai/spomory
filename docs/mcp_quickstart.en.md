@@ -13,9 +13,12 @@ for the "true delete" capability behind `export_memory`), and
 bulk counterpart to `forget_memory`). It defaults to a local
 `LocalGraphStore` (SQLite file `memory_core.sqlite3`).
 
-> The Python package name, the CLI command (`memory-core-mcp`), and the
-> module name in code are all still `memory_core` — only the **name
-> registered with the client** was changed to Spomory. The two are
+> The importable module is still `memory_core`, and the source-install
+> package name is still `memory-core` — the PyPI package is published as
+> `spomory` instead, with two identical CLI commands, `memory-core-mcp`
+> and `spomory-mcp` (same entry point, either name works). Only the
+> **name registered with the client** needs to be exactly `Spomory` for
+> Claude Desktop/Cursor/Codex CLI to display it that way; the two are
 > independent: the `command` field points at whichever executable
 > actually runs the code, while the key in the `mcpServers` JSON object is
 > what shows up in the Claude Desktop/Cursor UI and names the log file
@@ -37,10 +40,18 @@ bulk counterpart to `forget_memory`). It defaults to a local
 ## Install
 
 ```bash
-uv pip install "memory-core[llm,embedding,mcp] @ git+https://github.com/<org>/<repo>.git"
-# or for local development:
+# simplest — the published package, nothing to clone
+pip install "spomory[llm,embedding,mcp]"
+
+# from source, for local development:
 uv pip install -e ".[llm,embedding,mcp]"
 ```
+
+A [`Dockerfile`](../Dockerfile) is also in the repo root, for MCP
+directories/hosts (e.g. Glama) that deploy from a container image
+instead of a package manager. It's a stdio server, so run it with
+`docker run -i`; state persists under `/data` if you mount a volume
+there.
 
 ## Configure
 

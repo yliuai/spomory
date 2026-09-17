@@ -173,15 +173,26 @@ did.
 
 This MCP server shows up in Claude Desktop / Cursor / Codex CLI as **Spomory** (set
 by the `mcpServers` key in the client's config file — see the docs
-below). The Python package name and CLI command are still
-`memory-core` / `memory-core-mcp`; the two are independent of each other.
+below). The source-install package name and CLI command are still
+`memory-core` / `memory-core-mcp`; the package published on PyPI is
+`spomory` (CLI command `spomory-mcp`, same entry point as
+`memory-core-mcp`). All of that is independent of the display name.
 
-With the `mcp` dependency group installed and `LLM_API_KEY` etc. set:
+With `LLM_API_KEY` etc. set:
 
 ```bash
+# simplest — install the published package, nothing to clone
+pip install "spomory[llm,embedding,mcp]"
+spomory-mcp   # stays running as a stdio MCP server, waiting for a client to connect
+
+# or, working from a clone of this repo:
 uv pip install -e ".[llm,embedding,mcp]"
-memory-core-mcp   # stays running as a stdio MCP server, waiting for a client to connect
+memory-core-mcp
 ```
+
+A [`Dockerfile`](Dockerfile) is also included (stdio transport — run with
+`docker run -i`), for MCP directories/hosts that deploy from a
+container image rather than a package manager.
 
 Data lives in `~/.memory-core/` by default (override with
 `MEMORY_CORE_DATA_DIR`); setting `DATABASE_URL` switches to the Postgres

@@ -48,6 +48,7 @@ dev = [
 
 [project.scripts]
 memory-core-mcp = "memory_core.mcp_server.__main__:main"
+spomory-mcp = "memory_core.mcp_server.__main__:main"
 memory-core-mcp-remote = "cloud_api.remote_main:main"
 
 [build-system]
