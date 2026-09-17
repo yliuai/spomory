@@ -1,3 +1,5 @@
+<!-- mcp-name: io.github.lyf-wxy/spomory -->
+
 # Spomory
 
 **English | [中文](README.zh-CN.md)**

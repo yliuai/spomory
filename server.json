@@ -6,7 +6,41 @@
     "url": "https://github.com/yliuai/spomory",
     "source": "github"
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "spomory",
+      "version": "0.1.0",
+      "registryBaseUrl": "https://pypi.org",
+      "runtimeHint": "uvx",
+      "runtimeArguments": [
+        { "type": "named", "name": "--from", "value": "spomory[mcp]" },
+        { "type": "positional", "value": "spomory-mcp" }
+      ],
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        {
+          "name": "LLM_API_KEY",
+          "description": "API key for an OpenAI-compatible LLM provider, used for entity/relation extraction",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "LLM_BASE_URL",
+          "description": "OpenAI-compatible base URL",
+          "isRequired": false,
+          "default": "https://api.openai.com/v1"
+        },
+        {
+          "name": "LLM_MODEL",
+          "description": "Model name for extraction",
+          "isRequired": false,
+          "default": "gpt-4o-mini"
+        }
+      ]
+    }
+  ],
   "remotes": [
     {
       "type": "streamable-http",
