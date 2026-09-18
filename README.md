@@ -4,18 +4,80 @@
 
 **English | [中文](README.zh-CN.md)**
 
-The core engine behind a personal AI memory product: HippoRAG-style
-retrieval (query→triple matching + personalized PageRank diffusion) +
-a LightRAG-style dual-layer incremental knowledge graph + a lightweight
-GRPO-trained memory-management policy, exposed to Claude Desktop / Cursor
-and other clients via an MCP server, with a path to a cloud deployment
-(Postgres backend, FastAPI auth/billing skeleton) already scaffolded.
+Spomory gives Claude Desktop, Cursor, and Codex CLI a memory that
+persists across sessions — and is shared between all three. Tell one of
+them something once (a project detail, a preference, a fact about
+yourself) and any of them can recall it later, without you repeating
+yourself.
 
-> Spomory is the product/client-facing display name. The Python package
-> name, CLI command (`memory-core-mcp`), and module name (`memory_core`)
-> are unchanged — see the "Quickstart: MCP Server" section below.
+It runs as an [MCP](https://modelcontextprotocol.io/) server, either
+locally on your own machine (free, nothing leaves your computer) or as a
+hosted cloud service (free signup, memory follows you across devices).
+The rest of this README covers the local path; for the cloud path see
+[spomory.yliuai.com/get-started/remote](https://spomory.yliuai.com/get-started/remote).
 
-## What's implemented
+Curious what it looks like before installing anything? There's a
+no-signup demo at [spomory.yliuai.com](https://spomory.yliuai.com) —
+paste in some text, see the entities and relations it extracts.
+
+## Get started
+
+Requires Python 3.11+.
+
+**1. Install**
+
+```bash
+pip install "spomory[llm,embedding,mcp]"
+```
+
+**2. Give it an LLM.** Spomory uses an LLM to turn what you tell it into
+structured facts. Any OpenAI-compatible API works — OpenAI, DeepSeek,
+Qwen, etc.:
+
+```bash
+export LLM_API_KEY=sk-...
+export LLM_BASE_URL=https://api.deepseek.com   # optional, defaults to OpenAI
+export LLM_MODEL=deepseek-chat                 # optional, defaults to gpt-4o-mini
+```
+
+**3. Connect it to your client.** Claude Desktop, Cursor, and Codex CLI
+each need a few lines added to a config file, pointing at the
+`spomory-mcp` command. The exact steps, a config file example for each
+client, and a real gotcha we hit (macOS blocking a venv that lives under
+`~/Documents`) are in
+[`docs/mcp_quickstart.en.md`](docs/mcp_quickstart.en.md).
+
+> The one thing that trips people up: the config needs the **absolute
+> path** to `spomory-mcp` (run `which spomory-mcp` to find it) — the
+> client doesn't necessarily launch it with your shell's `PATH` set.
+
+That's it. Data lives locally in `~/.memory-core/` by default (override
+with `MEMORY_CORE_DATA_DIR`). A [`Dockerfile`](Dockerfile) is also
+included, for MCP directories/hosts that deploy from a container image
+instead.
+
+## What it can do
+
+Once connected, six tools become available inside the client:
+
+| Tool | What it does |
+|---|---|
+| `add_memory` | Remembers something you tell it |
+| `search_memory` | Recalls whatever's relevant to a question |
+| `forget_memory` | Deletes the one thing that best matches what you asked to forget |
+| `forget_all_memory` | Wipes the entire memory graph in one call |
+| `get_graph` | Shows the memory graph around something, for inspection |
+| `export_memory` | Exports everything you've stored, as JSON — your data, portable |
+
+All six are verified working end-to-end against real Claude Desktop,
+Cursor, and Codex CLI sessions, both local and remote — see
+[`docs/mcp_quickstart.en.md`](docs/mcp_quickstart.en.md) for what
+"verified" means for each client.
+
+## How it works, for the curious
+
+You don't need any of this to use Spomory — it's here for people who
+want to know what's actually happening underneath.
 
 - **Pluggable LLM / embedding providers**: defaults to any OpenAI-compatible
   API (including Chinese-market LLM providers) + local
@@ -41,9 +103,6 @@ and other clients via an MCP server, with a path to a cloud deployment
   rule-based default policy (`RuleBasedPolicy`) and a full GRPO training
   pipeline (`memory_manager/train_grpo.py`, actually run and verified on
   a real GPU).
-- **MCP Server**: exposes six tools — `add_memory`, `search_memory`,
-  `get_graph`, `export_memory`, `forget_memory`, `forget_all_memory` —
-  verified end-to-end against a real Claude Desktop.
 - **Memory passport export + true delete**: a JSON-LD style export format,
   physical deletion, and an audit log.
 - **Multimodal image verification**: image captioning → reuses the text
@@ -51,159 +110,6 @@ and other clients via an MCP server, with a path to a cloud deployment
   positioned as "verification," not "native cross-modal extraction."
 - **Cloud skeleton**: FastAPI user auth/API keys/quotas, a Stripe webhook
   billing scaffold (skeleton-level only, not production-deployed).
-
-## Project layout
-
-```
-src/
-├── memory_core/
-│   ├── graph/            # entity/relation models, storage adapters (local SQLite / cloud Postgres), incremental writes
-│   ├── retrieval/        # query→triple matching, personalized PageRank, context assembly
-│   ├── memory_manager/   # action space, reward functions, GRPO training script, policy inference
-│   ├── multimodal/       # image captioning + CLIP verification
-│   ├── mcp_server/       # MCP Server (the distribution entry point)
-│   ├── export/           # memory passport export format + true delete
-│   ├── llm/              # pluggable LLM/embedding providers
-│   ├── audit.py          # deletion audit log
-│   └── usage.py          # retention/usage tracking
-└── cloud_api/            # FastAPI cloud service skeleton (auth, quotas, billing)
-benchmarks/                # LoCoMo/LongMemEval evaluation harness + multimodal comparison experiments
-tests/                     # 94+ tests, from unit tests to real LLM/GPU/Postgres end-to-end verification
-docs/                      # per-epic design notes, verification reports, runbooks (see index below)
-```
-
-## Installation
-
-Prerequisites: Python **3.11+**, [uv](https://docs.astral.sh/uv/getting-started/installation/)
-(no uv? `python -m venv` + `pip install -e` works as a substitute for the
-`uv` commands below).
-
-```bash
-git clone <this repo's URL> memory-core && cd memory-core
-uv venv --python 3.11 .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-
-# Pick dependency groups as needed — they can be combined, no need to install everything:
-uv pip install -e ".[dev]"                 # required to run tests/lint
-uv pip install -e ".[llm,embedding]"       # required for the "minimal working memory system" (see the demo below)
-uv pip install -e ".[mcp]"                 # extra: connecting to Claude Desktop/Cursor
-uv pip install -e ".[rl]"                  # extra: GRPO training (requires a GPU + CUDA)
-uv pip install -e ".[cloud]"               # extra: cloud API / Postgres backend
-uv pip install -e ".[multimodal]"          # extra: image + CLIP verification
-```
-
-The `embedding` group downloads the default model `BAAI/bge-m3` from
-HuggingFace on first use (~2.2GB) — make sure huggingface.co is reachable
-(if you're behind the Great Firewall, `export HF_ENDPOINT=https://hf-mirror.com`
-routes through a mirror). You can also swap in a smaller model via
-`export EMBEDDING_MODEL=<any sentence-transformers model name>`.
-
-The `llm` group itself downloads nothing, but **`LLM_API_KEY` must be set
-at runtime** (any OpenAI-compatible Chat Completions endpoint works — OpenAI,
-DeepSeek, Qwen, etc.):
-
-```bash
-export LLM_API_KEY=sk-...
-export LLM_BASE_URL=https://api.deepseek.com   # optional; defaults to OpenAI's endpoint
-export LLM_MODEL=deepseek-chat                 # optional; defaults to gpt-4o-mini
-```
-
-### Run a minimal example (no MCP, plain Python calls)
-
-With `dev` + `llm` + `embedding` installed and the three env vars above
-set, this script exercises the full "write a memory → retrieve it"
-pipeline directly (the same logic behind `mcp_server/server.py`'s
-`add_memory`/`search_memory` tools, just calling the library directly
-instead of going through the MCP protocol layer):
-
-```python
-# demo.py
-from memory_core.graph.local_store import LocalGraphStore
-from memory_core.graph.incremental import IncrementalIngestor
-from memory_core.llm.openai_compatible import OpenAICompatibleProvider
-from memory_core.llm.local_sentence_transformer import SentenceTransformerProvider
-from memory_core.memory_manager.policy import RuleBasedPolicy
-from memory_core.retrieval.ppr import personalized_pagerank, rank_entities
-from memory_core.retrieval.query_match import match_query_to_triples
-from memory_core.retrieval.ranker import build_context
-
-store = LocalGraphStore("demo.sqlite3")          # a local file; delete it to reset
-llm = OpenAICompatibleProvider()                 # reads LLM_API_KEY etc. from the environment
-embedder = SentenceTransformerProvider()         # downloads bge-m3 on first run
-
-# 1. Write a memory: the LLM extracts triples, incrementally merged into the graph
-ingestor = IncrementalIngestor(store, llm, policy=RuleBasedPolicy())
-result = ingestor.ingest("I do AI research at CAS, mostly in Python.", source_id="demo")
-print(f"added {result.new_entities} entities, {result.new_relations} relations")
-
-# 2. Retrieve: match the query against triples -> PPR diffusion -> assemble a natural-language context
-query = "Where do I work?"
-entities, relations = store.all_entities(), store.all_relations()
-entities_by_id = {e.id: e for e in entities}
-matches = match_query_to_triples(query, relations, entities_by_id, embedder, top_k=10)
-seed_ids = {r.relation.subject_id for r in matches} | {r.relation.object_id for r in matches}
-scores = personalized_pagerank(entities, relations, seed_entity_ids=list(seed_ids))
-ranked_ids = [eid for eid, _ in rank_entities(scores)]
-print(build_context(relations, entities_by_id, ranked_ids, top_k=10))
-```
-
-```bash
-python demo.py
-```
-
-Here's real output from a live run against DeepSeek with the exact input
-shown above (not fabricated, not cleaned up — this is what actually came
-back):
-
-```
-added 3 entities, 2 relations
-I do AI research at CAS (recorded at 2026-09-05 10:40:00).I do AI research mostly in Python (recorded at 2026-09-05 10:40:00).
-```
-
-Exact wording and entity/relation counts depend on the LLM's own
-extraction and will vary between runs, but as long as the env vars are
-set correctly, non-empty output means the pipeline works end to end.
-`retrieval/ranker.py` detects whether a relation's text is CJK or not and
-renders it accordingly (no spaces + a Chinese timestamp label for CJK,
-spaced words + an English timestamp label otherwise), so English input no
-longer comes out as one run-on word like earlier versions of this demo
-did.
-
-## Quickstart: MCP Server (connecting to Claude Desktop / Cursor / Codex CLI)
-
-This MCP server shows up in Claude Desktop / Cursor / Codex CLI as **Spomory** (set
-by the `mcpServers` key in the client's config file — see the docs
-below). The source-install package name and CLI command are still
-`memory-core` / `memory-core-mcp`; the package published on PyPI is
-`spomory` (CLI command `spomory-mcp`, same entry point as
-`memory-core-mcp`). All of that is independent of the display name.
-
-With `LLM_API_KEY` etc. set:
-
-```bash
-# simplest — install the published package, nothing to clone
-pip install "spomory[llm,embedding,mcp]"
-spomory-mcp   # stays running as a stdio MCP server, waiting for a client to connect
-
-# or, working from a clone of this repo:
-uv pip install -e ".[llm,embedding,mcp]"
-memory-core-mcp
-```
-
-A [`Dockerfile`](Dockerfile) is also included (stdio transport — run with
-`docker run -i`), for MCP directories/hosts that deploy from a
-container image rather than a package manager.
-
-Data lives in `~/.memory-core/` by default (override with
-`MEMORY_CORE_DATA_DIR`); setting `DATABASE_URL` switches to the Postgres
-backend instead of local SQLite.
-
-Connecting it to Claude Desktop / Cursor / Codex CLI requires registering
-this command's **absolute path** in the client's config file (don't rely
-on `PATH`). Full steps, a config file example, and a real gotcha we
-actually hit (macOS's TCC privacy protection blocks a venv running under
-`~/Documents`) are in
-[`docs/mcp_quickstart.en.md`](docs/mcp_quickstart.en.md).
 
 ## Measured results
 
@@ -266,7 +172,122 @@ Raw data:
 the run script is
 [`benchmarks/run_longmemeval_subset.py`](benchmarks/run_longmemeval_subset.py).
 
-## Testing
+## For contributors: building from source
+
+Everything below is for people who want to hack on the internals, run
+the test suite, or reach dependency groups beyond what running the MCP
+server needs (GPU training, the cloud API skeleton, multimodal
+verification). If you just want to use Spomory, you don't need any of
+this — see "Get started" above.
+
+### Project layout
+
+```
+src/
+├── memory_core/
+│   ├── graph/            # entity/relation models, storage adapters (local SQLite / cloud Postgres), incremental writes
+│   ├── retrieval/        # query→triple matching, personalized PageRank, context assembly
+│   ├── memory_manager/   # action space, reward functions, GRPO training script, policy inference
+│   ├── multimodal/       # image captioning + CLIP verification
+│   ├── mcp_server/       # MCP Server (the distribution entry point)
+│   ├── export/           # memory passport export format + true delete
+│   ├── llm/              # pluggable LLM/embedding providers
+│   ├── audit.py          # deletion audit log
+│   └── usage.py          # retention/usage tracking
+└── cloud_api/            # FastAPI cloud service skeleton (auth, quotas, billing)
+benchmarks/                # LoCoMo/LongMemEval evaluation harness + multimodal comparison experiments
+tests/                     # 94+ tests, from unit tests to real LLM/GPU/Postgres end-to-end verification
+docs/                      # per-epic design notes, verification reports, runbooks (see index below)
+```
+
+### Set up a dev environment
+
+Prerequisites: Python **3.11+**, [uv](https://docs.astral.sh/uv/getting-started/installation/)
+(no uv? `python -m venv` + `pip install -e` works as a substitute for the
+`uv` commands below).
+
+```bash
+git clone <this repo's URL> memory-core && cd memory-core
+uv venv --python 3.11 .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+
+# Pick dependency groups as needed — they can be combined, no need to install everything:
+uv pip install -e ".[dev]"                 # required to run tests/lint
+uv pip install -e ".[llm,embedding]"       # required for the "minimal working memory system" (see the demo below)
+uv pip install -e ".[mcp]"                 # extra: connecting to Claude Desktop/Cursor
+uv pip install -e ".[rl]"                  # extra: GRPO training (requires a GPU + CUDA)
+uv pip install -e ".[cloud]"               # extra: cloud API / Postgres backend
+uv pip install -e ".[multimodal]"          # extra: image + CLIP verification
+```
+
+The `embedding` group downloads the default model `BAAI/bge-m3` from
+HuggingFace on first use (~2.2GB) — make sure huggingface.co is reachable
+(if you're behind the Great Firewall, `export HF_ENDPOINT=https://hf-mirror.com`
+routes through a mirror). You can also swap in a smaller model via
+`export EMBEDDING_MODEL=<any sentence-transformers model name>`.
+
+### Run a minimal example (no MCP, plain Python calls)
+
+With `dev` + `llm` + `embedding` installed and the three env vars from
+"Get started" set, this script exercises the full "write a memory →
+retrieve it" pipeline directly (the same logic behind
+`mcp_server/server.py`'s `add_memory`/`search_memory` tools, just calling
+the library directly instead of going through the MCP protocol layer):
+
+```python
+# demo.py
+from memory_core.graph.local_store import LocalGraphStore
+from memory_core.graph.incremental import IncrementalIngestor
+from memory_core.llm.openai_compatible import OpenAICompatibleProvider
+from memory_core.llm.local_sentence_transformer import SentenceTransformerProvider
+from memory_core.memory_manager.policy import RuleBasedPolicy
+from memory_core.retrieval.ppr import personalized_pagerank, rank_entities
+from memory_core.retrieval.query_match import match_query_to_triples
+from memory_core.retrieval.ranker import build_context
+
+store = LocalGraphStore("demo.sqlite3")          # a local file; delete it to reset
+llm = OpenAICompatibleProvider()                 # reads LLM_API_KEY etc. from the environment
+embedder = SentenceTransformerProvider()         # downloads bge-m3 on first run
+
+# 1. Write a memory: the LLM extracts triples, incrementally merged into the graph
+ingestor = IncrementalIngestor(store, llm, policy=RuleBasedPolicy())
+result = ingestor.ingest("I do AI research at CAS, mostly in Python.", source_id="demo")
+print(f"added {result.new_entities} entities, {result.new_relations} relations")
+
+# 2. Retrieve: match the query against triples -> PPR diffusion -> assemble a natural-language context
+query = "Where do I work?"
+entities, relations = store.all_entities(), store.all_relations()
+entities_by_id = {e.id: e for e in entities}
+matches = match_query_to_triples(query, relations, entities_by_id, embedder, top_k=10)
+seed_ids = {r.relation.subject_id for r in matches} | {r.relation.object_id for r in matches}
+scores = personalized_pagerank(entities, relations, seed_entity_ids=list(seed_ids))
+ranked_ids = [eid for eid, _ in rank_entities(scores)]
+print(build_context(relations, entities_by_id, ranked_ids, top_k=10))
+```
+
+```bash
+python demo.py
+```
+
+Here's real output from a live run against DeepSeek with the exact input
+shown above (not fabricated, not cleaned up — this is what actually came
+back):
+
+```
+added 3 entities, 2 relations
+I do AI research at CAS (recorded at 2026-09-05 10:40:00).I do AI research mostly in Python (recorded at 2026-09-05 10:40:00).
+```
+
+Exact wording and entity/relation counts depend on the LLM's own
+extraction and will vary between runs, but as long as the env vars are
+set correctly, non-empty output means the pipeline works end to end.
+`retrieval/ranker.py` detects whether a relation's text is CJK or not and
+renders it accordingly (no spaces + a Chinese timestamp label for CJK,
+spaced words + an English timestamp label otherwise), so English input no
+longer comes out as one run-on word like earlier versions of this demo
+did.
+
+### Testing
 
 ```bash
 pytest                    # everything

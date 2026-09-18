@@ -2,16 +2,70 @@
 
 **[English](README.md) | 中文**
 
-个人 AI 记忆产品的核心引擎：HippoRAG 式检索（query→triple 匹配 + 个性化
-PageRank 扩散）+ LightRAG 式双层增量知识图谱 + 轻量级 GRPO 记忆管理策略，
-通过 MCP Server 接入 Claude Desktop / Cursor 等客户端，并预留了云端部署
-（Postgres 后端、FastAPI 鉴权/计费骨架）的扩展路径。
+Spomory 让 Claude Desktop、Cursor、Codex CLI 拥有一份跨会话保留、并且
+三者共享的记忆。跟其中一个说过一次的事（项目细节、个人偏好、任何一个
+事实），换到另一个客户端也能被记起来，不用重新自我介绍。
 
-> Spomory 是产品/客户端展示名；Python 包名、CLI 命令
-> （`memory-core-mcp`）、代码里的模块名（`memory_core`）保持不变，见下方
-> "快速开始：MCP Server"一节的说明。
+它是一个 [MCP](https://modelcontextprotocol.io/) Server，两种跑法：本地
+自托管（免费，数据不出你的电脑）或云端托管（免费注册，记忆跨设备同步）。
+这份 README 讲的是本地这条路；云端路径见
+[spomory.yliuai.com/get-started/remote](https://spomory.yliuai.com/get-started/remote)。
 
-## 已实现的能力
+想先看看效果再决定要不要装？[spomory.yliuai.com](https://spomory.yliuai.com)
+上有个免注册 Demo，贴一段文字进去，直接看抽取出来的实体和关系。
+
+## 快速开始
+
+前置要求：Python 3.11+。
+
+**第一步：安装**
+
+```bash
+pip install "spomory[llm,embedding,mcp]"
+```
+
+**第二步：接上一个 LLM。** Spomory 靠 LLM 把你说的话变成结构化的事实，
+任意 OpenAI 兼容接口都行——OpenAI、DeepSeek、通义千问等：
+
+```bash
+export LLM_API_KEY=sk-...
+export LLM_BASE_URL=https://api.deepseek.com   # 可选；不设默认是 OpenAI 官方地址
+export LLM_MODEL=deepseek-chat                 # 可选；不设默认是 gpt-4o-mini
+```
+
+**第三步：接到你用的客户端。** Claude Desktop、Cursor、Codex CLI 都需要在
+各自的配置文件里加几行、指向 `spomory-mcp` 这个命令。完整步骤、每个客户端
+的配置文件示例，以及一个真实踩过的坑（macOS 会拦截跑在 `~/Documents` 下的
+venv）都在 [`docs/mcp_quickstart.md`](docs/mcp_quickstart.md)。
+
+> 最容易踩坑的一点：配置文件里要填 `spomory-mcp` 的**绝对路径**（用
+> `which spomory-mcp` 查）,不能只填命令名——客户端启动它时不一定带着你
+> shell 里的 `PATH`。
+
+配置完就好了。数据默认存在本地 `~/.memory-core/`（可用
+`MEMORY_CORE_DATA_DIR` 环境变量改路径）。仓库里也带了一份
+[`Dockerfile`](Dockerfile)，给那些从容器镜像部署的 MCP 目录/托管平台用。
+
+## 能做什么
+
+接好之后，客户端里会出现六个工具：
+
+| 工具 | 作用 |
+|---|---|
+| `add_memory` | 记住你告诉它的事 |
+| `search_memory` | 检索跟问题相关的记忆 |
+| `forget_memory` | 删除和你要求"忘记"最匹配的那一条 |
+| `forget_all_memory` | 一次性清空整个记忆图谱 |
+| `get_graph` | 查看某个实体周围的记忆图谱，用于检查 |
+| `export_memory` | 把存过的一切导出成 JSON——你的数据，可带走 |
+
+六个工具都在真实的 Claude Desktop、Cursor、Codex CLI 会话里端到端验证过，
+本地版和云端版都测过——"验证过"具体指什么，见
+[`docs/mcp_quickstart.md`](docs/mcp_quickstart.md)。
+
+## 背后是怎么做的（给感兴趣的人看）
+
+用 Spomory 不需要懂这些，这一节是给想了解内部原理的人看的。
 
 - **可插拔 LLM / Embedding 接口**：默认走任意 OpenAI 兼容 API（含国产模型）
   + 本地 `sentence-transformers`（默认 `bge-m3`，中英文混合）。
@@ -30,152 +84,11 @@ PageRank 扩散）+ LightRAG 式双层增量知识图谱 + 轻量级 GRPO 记忆
 - **记忆管理**：ADD/UPDATE/DELETE/NOOP 动作空间，默认规则式策略
   （`RuleBasedPolicy`），也实现了 GRPO 训练策略的完整链路
   （`memory_manager/train_grpo.py`，真实在 GPU 上跑通过）。
-- **MCP Server**：暴露 `add_memory`/`search_memory`/`get_graph`/
-  `export_memory`/`forget_memory`/`forget_all_memory` 六个工具，真实在
-  Claude Desktop 里端到端验证过。
 - **记忆护照导出 + 真删除**：JSON-LD 风格导出格式，物理删除 + 审计日志。
 - **多模态图片验证**：图片 captioning → 复用文本抽取 → CLIP 二次校验候选
   三元组，诚实定位为"验证"而非"原生跨模态抽取"。
 - **云端骨架**：FastAPI 用户认证/API Key/配额、Stripe webhook 计费雏形
   （均为骨架级实现，未做生产部署）。
-
-## 项目结构
-
-```
-src/
-├── memory_core/
-│   ├── graph/            # 实体/关系模型、存储适配器（本地SQLite/云端Postgres）、增量写入
-│   ├── retrieval/        # query→triple匹配、个性化PageRank、上下文拼装
-│   ├── memory_manager/   # 动作空间、奖励函数、GRPO训练脚本、策略推理
-│   ├── multimodal/       # 图片captioning + CLIP验证
-│   ├── mcp_server/       # MCP Server（对外分发入口）
-│   ├── export/           # 记忆护照导出格式与真删除
-│   ├── llm/              # 可插拔 LLM/Embedding 接口
-│   ├── audit.py          # 删除审计日志
-│   └── usage.py          # 留存/使用埋点
-└── cloud_api/            # FastAPI 云端服务骨架（认证、配额、计费）
-benchmarks/                # LoCoMo/LongMemEval 评测 harness + 多模态对比实验
-tests/                     # 94+ 个测试，覆盖单元测试到真实 LLM/GPU/Postgres 端到端验证
-docs/                      # 各 Epic 的设计说明、验证报告、操作手册（见下方索引）
-```
-
-## 安装
-
-前置要求：Python **3.11+**、[uv](https://docs.astral.sh/uv/getting-started/installation/)
-（没有 uv 也可以用 `python -m venv` + `pip install -e` 替代下面的 `uv` 命令）。
-
-```bash
-git clone <本仓库地址> memory-core && cd memory-core
-uv venv --python 3.11 .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-
-# 按需选择依赖组，可以叠加安装，不用一次装全部：
-uv pip install -e ".[dev]"                 # 跑测试/lint 必需
-uv pip install -e ".[llm,embedding]"       # 跑 “最小可用记忆系统” 必需（见下方 Demo）
-uv pip install -e ".[mcp]"                 # 额外需要：接入 Claude Desktop/Cursor
-uv pip install -e ".[rl]"                  # 额外需要：GRPO 训练（需要 GPU + CUDA）
-uv pip install -e ".[cloud]"               # 额外需要：云端 API / Postgres 后端
-uv pip install -e ".[multimodal]"          # 额外需要：图片 + CLIP 验证
-```
-
-`embedding` 这一组首次调用时会从 HuggingFace 下载默认模型 `BAAI/bge-m3`
-（约 2.2GB），请确保网络可达 huggingface.co（国内可设置
-`export HF_ENDPOINT=https://hf-mirror.com` 走镜像）。也可以用
-`export EMBEDDING_MODEL=<其他 sentence-transformers 模型名>` 换成更小的模型。
-
-`llm` 这一组本身不下载任何模型，但**运行时必须设置** `LLM_API_KEY`（任意
-OpenAI 兼容的 Chat Completions 接口都可以，官方 OpenAI、DeepSeek、通义千问
-等都行）：
-
-```bash
-export LLM_API_KEY=sk-...
-export LLM_BASE_URL=https://api.deepseek.com   # 可选；不设默认是 OpenAI 官方地址
-export LLM_MODEL=deepseek-chat                 # 可选；不设默认是 gpt-4o-mini
-```
-
-### 跑通一个最小例子（不依赖 MCP，纯 Python 调用）
-
-装好 `dev` + `llm` + `embedding` 三组、设置好上面三个环境变量后，可以直接
-用下面这段脚本验证"写入记忆 → 检索记忆"整条链路是否工作（对应
-`mcp_server/server.py` 里 `add_memory`/`search_memory` 两个工具背后的真实
-逻辑，只是这里绕开了 MCP 协议层，直接调库）：
-
-```python
-# demo.py
-from memory_core.graph.local_store import LocalGraphStore
-from memory_core.graph.incremental import IncrementalIngestor
-from memory_core.llm.openai_compatible import OpenAICompatibleProvider
-from memory_core.llm.local_sentence_transformer import SentenceTransformerProvider
-from memory_core.memory_manager.policy import RuleBasedPolicy
-from memory_core.retrieval.ppr import personalized_pagerank, rank_entities
-from memory_core.retrieval.query_match import match_query_to_triples
-from memory_core.retrieval.ranker import build_context
-
-store = LocalGraphStore("demo.sqlite3")          # 本地文件，删掉即重置
-llm = OpenAICompatibleProvider()                 # 读取 LLM_API_KEY 等环境变量
-embedder = SentenceTransformerProvider()         # 首次运行会下载 bge-m3
-
-# 1. 写入一条记忆：LLM 抽取三元组，增量合并进图谱
-ingestor = IncrementalIngestor(store, llm, policy=RuleBasedPolicy())
-result = ingestor.ingest("我在中科院做AI研究，主要用 Python。", source_id="demo")
-print(f"新增实体 {result.new_entities} 个，新增关系 {result.new_relations} 条")
-
-# 2. 检索：query 匹配三元组 -> PPR 扩散 -> 拼装自然语言上下文
-query = "我在哪里工作？"
-entities, relations = store.all_entities(), store.all_relations()
-entities_by_id = {e.id: e for e in entities}
-matches = match_query_to_triples(query, relations, entities_by_id, embedder, top_k=10)
-seed_ids = {r.relation.subject_id for r in matches} | {r.relation.object_id for r in matches}
-scores = personalized_pagerank(entities, relations, seed_entity_ids=list(seed_ids))
-ranked_ids = [eid for eid, _ in rank_entities(scores)]
-print(build_context(relations, entities_by_id, ranked_ids, top_k=10))
-```
-
-```bash
-python demo.py
-```
-
-这是用 DeepSeek 真实跑出来的输出（下面这段不是编的，实测截图式记录）：
-
-```
-新增实体 4 个，新增关系 2 条
-我在中科院做AI研究（记录于2026-09-04 22:36:00）。我主要用Python（记录于2026-09-04 22:36:00）。
-```
-
-具体措辞、实体/关系数量取决于所用 LLM 的抽取结果，每次跑不完全一致，
-但只要环境变量配对了，跑出非空结果就说明链路是通的。
-
-## 快速开始：MCP Server（接入 Claude Desktop / Cursor / Codex CLI）
-
-这个 MCP Server 在 Claude Desktop / Cursor / Codex CLI 里显示的名字是 **Spomory**
-（由客户端配置文件 `mcpServers` 下的键名决定，见下方文档）；源码里的包名/
-CLI 命令仍然是 `memory-core` / `memory-core-mcp`，PyPI 上发布的包名是
-`spomory`（对应命令 `spomory-mcp`，和 `memory-core-mcp` 是同一个入口），
-这些和显示名字是独立的两件事。
-
-设置好 `LLM_API_KEY` 等环境变量后：
-
-```bash
-# 最简单：直接装发布到 PyPI 的包，不用克隆仓库
-pip install "spomory[llm,embedding,mcp]"
-spomory-mcp   # 启动后常驻，作为 stdio MCP server 等待客户端连接
-
-# 或者，基于本仓库的克隆：
-uv pip install -e ".[llm,embedding,mcp]"
-memory-core-mcp
-```
-
-仓库里也带了一份 [`Dockerfile`](Dockerfile)（stdio 传输——要用
-`docker run -i` 启动），给那些从容器镜像而不是包管理器部署的 MCP
-目录/托管平台用。
-
-数据默认落在 `~/.memory-core/`（可用 `MEMORY_CORE_DATA_DIR` 环境变量改变），
-设置了 `DATABASE_URL` 则改用 Postgres 后端而非本地 SQLite。
-
-把它接到 Claude Desktop / Cursor / Codex CLI 需要在客户端配置文件里注册这个
-命令的**绝对路径**（而不是指望 `PATH`），完整步骤、配置文件示例、以及一个真实踩过的坑
-（macOS 上 TCC 隐私保护会拦截跑在 `~/Documents` 下的 venv，需要把 venv 装到
-`~/Documents` 之外）见 [`docs/mcp_quickstart.md`](docs/mcp_quickstart.md)。
 
 ## 已验证效果
 
@@ -229,7 +142,109 @@ memory-core-mcp
 复跑脚本是
 [`benchmarks/run_longmemeval_subset.py`](benchmarks/run_longmemeval_subset.py)。
 
-## 测试
+## 给贡献者：从源码构建
+
+下面这些是给想改内部代码、跑测试、或者要用到"跑 MCP Server 之外"那些依赖组
+（GPU 训练、云端 API 骨架、多模态验证）的人看的。只是想用 Spomory 的话，
+不需要看这一节，回上面的"快速开始"就够了。
+
+### 项目结构
+
+```
+src/
+├── memory_core/
+│   ├── graph/            # 实体/关系模型、存储适配器（本地SQLite/云端Postgres）、增量写入
+│   ├── retrieval/        # query→triple匹配、个性化PageRank、上下文拼装
+│   ├── memory_manager/   # 动作空间、奖励函数、GRPO训练脚本、策略推理
+│   ├── multimodal/       # 图片captioning + CLIP验证
+│   ├── mcp_server/       # MCP Server（对外分发入口）
+│   ├── export/           # 记忆护照导出格式与真删除
+│   ├── llm/              # 可插拔 LLM/Embedding 接口
+│   ├── audit.py          # 删除审计日志
+│   └── usage.py          # 留存/使用埋点
+└── cloud_api/            # FastAPI 云端服务骨架（认证、配额、计费）
+benchmarks/                # LoCoMo/LongMemEval 评测 harness + 多模态对比实验
+tests/                     # 94+ 个测试，覆盖单元测试到真实 LLM/GPU/Postgres 端到端验证
+docs/                      # 各 Epic 的设计说明、验证报告、操作手册（见下方索引）
+```
+
+### 搭开发环境
+
+前置要求：Python **3.11+**、[uv](https://docs.astral.sh/uv/getting-started/installation/)
+（没有 uv 也可以用 `python -m venv` + `pip install -e` 替代下面的 `uv` 命令）。
+
+```bash
+git clone <本仓库地址> memory-core && cd memory-core
+uv venv --python 3.11 .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+
+# 按需选择依赖组，可以叠加安装，不用一次装全部：
+uv pip install -e ".[dev]"                 # 跑测试/lint 必需
+uv pip install -e ".[llm,embedding]"       # 跑 "最小可用记忆系统" 必需（见下方 Demo）
+uv pip install -e ".[mcp]"                 # 额外需要：接入 Claude Desktop/Cursor
+uv pip install -e ".[rl]"                  # 额外需要：GRPO 训练（需要 GPU + CUDA）
+uv pip install -e ".[cloud]"               # 额外需要：云端 API / Postgres 后端
+uv pip install -e ".[multimodal]"          # 额外需要：图片 + CLIP 验证
+```
+
+`embedding` 这一组首次调用时会从 HuggingFace 下载默认模型 `BAAI/bge-m3`
+（约 2.2GB），请确保网络可达 huggingface.co（国内可设置
+`export HF_ENDPOINT=https://hf-mirror.com` 走镜像）。也可以用
+`export EMBEDDING_MODEL=<其他 sentence-transformers 模型名>` 换成更小的模型。
+
+### 跑通一个最小例子（不依赖 MCP，纯 Python 调用）
+
+装好 `dev` + `llm` + `embedding` 三组、设置好"快速开始"里的三个环境变量后，
+可以直接用下面这段脚本验证"写入记忆 → 检索记忆"整条链路是否工作（对应
+`mcp_server/server.py` 里 `add_memory`/`search_memory` 两个工具背后的真实
+逻辑，只是这里绕开了 MCP 协议层，直接调库）：
+
+```python
+# demo.py
+from memory_core.graph.local_store import LocalGraphStore
+from memory_core.graph.incremental import IncrementalIngestor
+from memory_core.llm.openai_compatible import OpenAICompatibleProvider
+from memory_core.llm.local_sentence_transformer import SentenceTransformerProvider
+from memory_core.memory_manager.policy import RuleBasedPolicy
+from memory_core.retrieval.ppr import personalized_pagerank, rank_entities
+from memory_core.retrieval.query_match import match_query_to_triples
+from memory_core.retrieval.ranker import build_context
+
+store = LocalGraphStore("demo.sqlite3")          # 本地文件，删掉即重置
+llm = OpenAICompatibleProvider()                 # 读取 LLM_API_KEY 等环境变量
+embedder = SentenceTransformerProvider()         # 首次运行会下载 bge-m3
+
+# 1. 写入一条记忆：LLM 抽取三元组，增量合并进图谱
+ingestor = IncrementalIngestor(store, llm, policy=RuleBasedPolicy())
+result = ingestor.ingest("我在中科院做AI研究，主要用 Python。", source_id="demo")
+print(f"新增实体 {result.new_entities} 个，新增关系 {result.new_relations} 条")
+
+# 2. 检索：query 匹配三元组 -> PPR 扩散 -> 拼装自然语言上下文
+query = "我在哪里工作？"
+entities, relations = store.all_entities(), store.all_relations()
+entities_by_id = {e.id: e for e in entities}
+matches = match_query_to_triples(query, relations, entities_by_id, embedder, top_k=10)
+seed_ids = {r.relation.subject_id for r in matches} | {r.relation.object_id for r in matches}
+scores = personalized_pagerank(entities, relations, seed_entity_ids=list(seed_ids))
+ranked_ids = [eid for eid, _ in rank_entities(scores)]
+print(build_context(relations, entities_by_id, ranked_ids, top_k=10))
+```
+
+```bash
+python demo.py
+```
+
+这是用 DeepSeek 真实跑出来的输出（下面这段不是编的，实测截图式记录）：
+
+```
+新增实体 4 个，新增关系 2 条
+我在中科院做AI研究（记录于2026-09-04 22:36:00）。我主要用Python（记录于2026-09-04 22:36:00）。
+```
+
+具体措辞、实体/关系数量取决于所用 LLM 的抽取结果，每次跑不完全一致，
+但只要环境变量配对了，跑出非空结果就说明链路是通的。
+
+### 测试
 
 ```bash
 pytest                    # 全部测试
