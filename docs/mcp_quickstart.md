@@ -58,6 +58,55 @@ export LLM_MODEL=deepseek-v4-flash             # 可选，默认 gpt-4o-mini
 export EMBEDDING_MODEL=BAAI/bge-m3             # 可选，默认 bge-m3
 ```
 
+### 完全本地运行（LLM 调用也不出网）
+
+默认情况下 embedding 已经是本地跑的（上面那个 `sentence-transformers`
+模型），只有 LLM 抽取/生成这一步默认走 `LLM_BASE_URL` 指向的云端接口。
+想让这一步也变成本地，把它指向任意本地跑的 OpenAI 兼容 server 就行——
+vLLM、Ollama、llama.cpp 的 `llama-server` 都自带这样一个 server，MLX
+生态（`mlx_lm.server`，或者社区的 `vllm-mlx`/`mlx-openai-server`）也是：
+
+```bash
+# Ollama
+export LLM_BASE_URL=http://localhost:11434/v1
+export LLM_API_KEY=not-needed   # 大多数本地 server 不检查这个，但 openai SDK 要求必须是非空字符串
+export LLM_MODEL=llama3.1       # 换成你 `ollama pull` 过的模型
+
+# vLLM / llama.cpp / MLX：思路一样，端口和模型名不同而已
+export LLM_BASE_URL=http://localhost:8080/v1
+```
+
+不用改代码——`OpenAICompatibleProvider` 本来就是连"任意 OpenAI 兼容
+接口"，纯粹是环境变量指向不同地方而已。要留意的一点：抽取这一步要求
+模型稳定输出合法 JSON（`response_format={"type": "json_object"}`），
+本地小模型在这一点和抽取质量整体上，大概率不如 GPT-4o-mini/DeepSeek
+稳定。
+
+如果还想连 `sentence-transformers`/`torch` 这个依赖也去掉（如果本来就
+在用上面某个引擎跑 LLM，没必要再装一套更重的 ML 框架只为了 embedding），
+把 embedding provider 也换掉：
+
+```bash
+export EMBEDDING_PROVIDER=openai_compatible
+export EMBEDDING_BASE_URL=http://localhost:11434/v1   # 不设置就沿用 LLM_BASE_URL
+export EMBEDDING_MODEL=nomic-embed-text                # 换成那个 server 上实际加载的 embedding 模型
+```
+
+`EMBEDDING_BASE_URL`/`EMBEDDING_API_KEY` 不设置时会分别退回到
+`LLM_BASE_URL`/`LLM_API_KEY`——对 Ollama 这种一个端口同时跑 chat 模型和
+embedding 模型的场景很方便，但 vLLM/llama.cpp 通常一个进程只跑一个模型，
+真要用它们做 embedding，一般得把 `EMBEDDING_BASE_URL` 指向另一个跑着专门
+embedding 模型的端口。配了这个之后，`pip install spomory[llm,mcp]` 就够了
+——`embedding` 这个依赖组（连带它拉的 `sentence-transformers`/`torch`）
+完全不需要装。
+
+**验证状态**：架构上四个引擎处理方式完全一样（都是同一套
+`/v1/embeddings`/`/v1/chat/completions` 协议），但目前仓库里只有 Ollama
+真正跑通过端到端验证（`tests/test_openai_compatible_embedding.py`
+里那个真实调用的测试，跑的是 `ollama serve` + `ollama pull
+nomic-embed-text`）。vLLM、llama.cpp、MLX 理论上是同样的用法，但还没
+在这个仓库里验证过。
+
 **存储后端**（Epic 8.2）：不设置 `DATABASE_URL` 时默认用本地 SQLite
 （`memory_core.sqlite3`）；设置了就自动切换到 Postgres 云端后端
 （`memory_core/mcp_server/server.py::_select_store_from_env()`），接口行为

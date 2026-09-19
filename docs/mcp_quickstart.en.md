@@ -65,6 +65,63 @@ export LLM_MODEL=deepseek-v4-flash             # optional, defaults to gpt-4o-mi
 export EMBEDDING_MODEL=BAAI/bge-m3             # optional, defaults to bge-m3
 ```
 
+### Running fully local (no cloud LLM calls at all)
+
+By default, embedding already runs locally (the `sentence-transformers`
+model above), and only the LLM extraction/generation call goes to
+whatever cloud API `LLM_BASE_URL` points at. To make that call local too,
+point it at any locally-running OpenAI-compatible server instead — vLLM,
+Ollama, and llama.cpp's `llama-server` all expose one, and so does the
+MLX ecosystem (`mlx_lm.server`, or the community `vllm-mlx` /
+`mlx-openai-server` wrappers):
+
+```bash
+# Ollama
+export LLM_BASE_URL=http://localhost:11434/v1
+export LLM_API_KEY=not-needed   # most local servers don't check this, but the openai SDK requires a non-empty string
+export LLM_MODEL=llama3.1       # whatever you've `ollama pull`ed
+
+# vLLM / llama.cpp / MLX: same idea, just the port/model name differ
+export LLM_BASE_URL=http://localhost:8080/v1
+```
+
+No code change needed — `OpenAICompatibleProvider` already talks to "any
+OpenAI-compatible endpoint," this is purely an env var pointing it
+somewhere else. The one thing to watch: extraction requires the model to
+reliably return valid JSON (`response_format={"type": "json_object"}`);
+smaller local models may be less consistent about this and about
+extraction quality generally than GPT-4o-mini/DeepSeek.
+
+To also drop the `sentence-transformers`/`torch` dependency (relevant if
+you're already running one of the engines above for the LLM anyway, and
+don't want a second, heavier ML framework installed just for embedding),
+switch the embedding provider too:
+
+```bash
+export EMBEDDING_PROVIDER=openai_compatible
+export EMBEDDING_BASE_URL=http://localhost:11434/v1   # defaults to LLM_BASE_URL if unset
+export EMBEDDING_MODEL=nomic-embed-text                # whatever embedding model that server has loaded
+```
+
+`EMBEDDING_BASE_URL`/`EMBEDDING_API_KEY` fall back to `LLM_BASE_URL`/
+`LLM_API_KEY` when unset — convenient for Ollama, which commonly serves
+both a chat model and an embedding model from the same port, less so for
+vLLM/llama.cpp, which usually run one model per process (so a real setup
+with either of those for embedding will typically point
+`EMBEDDING_BASE_URL` at a second port running a dedicated embedding
+model). When this is set, `pip install spomory[llm,mcp]` is enough — the
+`embedding` extra (and the `sentence-transformers`/`torch` install it
+pulls in) is entirely unnecessary.
+
+**Verification status**: architecturally this covers all four engines
+identically (they all speak the same `/v1/embeddings`/
+`/v1/chat/completions` protocol), but only Ollama has actually been
+tested end-to-end against a real server in this repo
+(`tests/test_openai_compatible_embedding.py`'s real-call test, run
+against `ollama serve` + `ollama pull nomic-embed-text`). vLLM,
+llama.cpp, and MLX should work the same way but haven't been verified
+here yet.
+
 **Storage backend** (Epic 8.2): with `DATABASE_URL` unset, it defaults to
 local SQLite (`memory_core.sqlite3`); setting it switches automatically to
 the Postgres cloud backend

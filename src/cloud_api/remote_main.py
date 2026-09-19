@@ -37,12 +37,12 @@ def _data_dir() -> Path:
 
 def default_remote_app() -> FastAPI:
     """Build the deployable app using env-configured providers/backend."""
-    from memory_core.llm.local_sentence_transformer import SentenceTransformerProvider
     from memory_core.llm.openai_compatible import OpenAICompatibleProvider
+    from memory_core.mcp_server.server import _select_embedder_from_env
 
     database_url = os.environ["DATABASE_URL"]  # required: no local-SQLite fallback for the remote server
     llm = OpenAICompatibleProvider()
-    embedder = SentenceTransformerProvider()
+    embedder = _select_embedder_from_env()
     data_dir = _data_dir()
     auth_store = AuthStore(data_dir / "memory_core_auth.sqlite3")
     usage_tracker = UsageTracker(data_dir / "memory_core_usage.sqlite3")

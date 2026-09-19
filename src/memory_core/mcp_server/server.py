@@ -20,6 +20,7 @@ from memory_core.graph.incremental import IncrementalIngestor
 from memory_core.graph.local_store import LocalGraphStore, migrate_plaintext_to_encrypted
 from memory_core.graph.store import GraphStoreBase
 from memory_core.llm.base import LLMProvider
+from memory_core.llm.embedding_base import EmbeddingProvider
 from memory_core.memory_manager.policy import RuleBasedPolicy
 from memory_core.retrieval.ppr import personalized_pagerank, rank_entities
 from memory_core.retrieval.query_match import match_query_to_triples
@@ -280,6 +281,37 @@ def _select_store_from_env() -> GraphStoreBase:
     return LocalGraphStore(db_path, encryption_key=encryption_key)
 
 
+def _select_embedder_from_env() -> EmbeddingProvider:
+    """EMBEDDING_PROVIDER unset/"sentence_transformers" (default) -> local
+    sentence-transformers model, unchanged from before; "openai_compatible"
+    -> talk to any OpenAI-compatible /v1/embeddings server instead (vLLM,
+    Ollama, llama.cpp, or MLX's mlx_lm.server / vllm-mlx / mlx-openai-server
+    -- they all speak this same protocol as of 2026). The second path pulls
+    in no local ML framework at all (no sentence-transformers, no torch),
+    which is the point for a fully-local deployment that's already running
+    one of those engines for LLM extraction: no reason to also drag in a
+    second, heavier framework just for embeddings.
+
+    Factored out from ``default_server()`` for the same testability reason
+    as ``_select_store_from_env()``.
+    """
+    import os
+
+    provider = os.environ.get("EMBEDDING_PROVIDER", "sentence_transformers")
+    if provider == "openai_compatible":
+        from memory_core.llm.openai_compatible_embedding import OpenAICompatibleEmbeddingProvider
+
+        return OpenAICompatibleEmbeddingProvider()
+    if provider == "sentence_transformers":
+        from memory_core.llm.local_sentence_transformer import SentenceTransformerProvider
+
+        return SentenceTransformerProvider()
+    raise ValueError(
+        f"Unknown EMBEDDING_PROVIDER {provider!r}; expected "
+        "'sentence_transformers' or 'openai_compatible'"
+    )
+
+
 def _load_or_create_encryption_key() -> bytes:
     """Epic 11.2: local storage is encrypted at rest by default, no config
     needed. The key lives next to the database rather than in a secrets
@@ -300,12 +332,11 @@ def _load_or_create_encryption_key() -> bytes:
 
 def default_server() -> MCPServer:
     """Build a server using env-configured providers and backend."""
-    from memory_core.llm.local_sentence_transformer import SentenceTransformerProvider
     from memory_core.llm.openai_compatible import OpenAICompatibleProvider
 
     store = _select_store_from_env()
     llm = OpenAICompatibleProvider()
-    embedder = SentenceTransformerProvider()
+    embedder = _select_embedder_from_env()
     usage_tracker = UsageTracker(_data_dir() / "memory_core_usage.sqlite3")
     audit_log = AuditLog(_data_dir() / "memory_core_audit.sqlite3")
     return build_server(store, llm, embedder, usage_tracker=usage_tracker, audit_log=audit_log)
