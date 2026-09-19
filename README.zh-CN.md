@@ -46,6 +46,13 @@ venv）都在 [`docs/mcp_quickstart.md`](docs/mcp_quickstart.md)。
 `MEMORY_CORE_DATA_DIR` 环境变量改路径）。仓库里也带了一份
 [`Dockerfile`](Dockerfile)，给那些从容器镜像部署的 MCP 目录/托管平台用。
 
+想让 LLM 调用也走本地、不出网？把 `LLM_BASE_URL` 指向任意本地跑的
+OpenAI 兼容 server 就行——vLLM、Ollama、llama.cpp、MLX 都可以；再设置
+`EMBEDDING_PROVIDER=openai_compatible` 把 embedding 也换成同一条路，
+而不是本地的 `sentence-transformers` 模型，这样能完全去掉 `torch` 这个
+依赖。具体步骤和各引擎的配置示例见
+[`docs/mcp_quickstart.md`](docs/mcp_quickstart.md#完全本地运行llm-调用也不出网)。
+
 ## 能做什么
 
 接好之后，客户端里会出现六个工具：

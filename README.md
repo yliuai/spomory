@@ -56,6 +56,14 @@ with `MEMORY_CORE_DATA_DIR`). A [`Dockerfile`](Dockerfile) is also
 included, for MCP directories/hosts that deploy from a container image
 instead.
 
+Want the LLM calls local too, instead of a cloud API? Point `LLM_BASE_URL`
+at any local OpenAI-compatible server — vLLM, Ollama, llama.cpp, or MLX
+all work — and set `EMBEDDING_PROVIDER=openai_compatible` to route
+embedding the same way instead of the local `sentence-transformers`
+model, dropping the `torch` dependency entirely. Details and per-engine
+examples in
+[`docs/mcp_quickstart.en.md`](docs/mcp_quickstart.en.md#running-fully-local-no-cloud-llm-calls-at-all).
+
 ## What it can do
 
 Once connected, six tools become available inside the client:
