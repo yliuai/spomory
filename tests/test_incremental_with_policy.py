@@ -44,6 +44,32 @@ def test_conflicting_fact_becomes_an_update_not_a_second_relation():
     assert relations[0].object_id == new_company.id
 
 
+def test_cross_client_conflict_keeps_both_and_is_reported():
+    """The reviewer's exact scenario: two different MCP clients write
+    contradicting facts about the same subject+predicate. Nothing here
+    decides which is true -- both relations survive, and the conflict is
+    reported instead of one silently overwriting the other."""
+    store = LocalGraphStore(":memory:")
+    policy = RuleBasedPolicy()
+    ingestor = IncrementalIngestor(store, FakeLLMProvider([]), policy)
+
+    ingestor.llm = FakeLLMProvider([_triple("张三", "任职于", "老公司")])
+    ingestor.ingest("张三在老公司工作", source_id="doc-1", client_name="claude-ai")
+    old_relation = store.all_relations()[0]
+
+    ingestor.llm = FakeLLMProvider([_triple("张三", "任职于", "新公司")])
+    result = ingestor.ingest("张三换工作去了新公司", source_id="doc-2", client_name="cursor")
+
+    assert result.updated_relations == 0
+    assert result.new_relations == 1
+    assert result.conflicting_relation_ids == [old_relation.id]
+
+    relations = store.all_relations()
+    assert len(relations) == 2  # both kept, neither overwritten
+    objects = {store.get_entity(r.object_id).name for r in relations}
+    assert objects == {"老公司", "新公司"}
+
+
 def test_no_policy_keeps_old_always_add_behavior():
     store = LocalGraphStore(":memory:")
     ingestor = IncrementalIngestor(store, FakeLLMProvider([_triple("a", "r", "b")]))  # policy=None

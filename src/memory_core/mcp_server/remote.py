@@ -45,6 +45,7 @@ from memory_core.llm.base import LLMProvider
 from memory_core.mcp_server.server import (
     _TOOL_ANNOTATIONS,
     _add_memory,
+    _client_name_from_context,
     _export_memory,
     _forget_all_memory,
     _forget_memory,
@@ -129,7 +130,7 @@ def _register_tools(
         _, ingestor = stores.resolve(user_id)
         if usage_tracker is not None:
             usage_tracker.record_event(user_id, "add_memory")
-        return _add_memory(ingestor, text, source_id)
+        return _add_memory(ingestor, text, source_id, client_name=_client_name_from_context(ctx))
 
     @mcp.tool(annotations=_TOOL_ANNOTATIONS["search_memory"])
     def search_memory(query: str, ctx: Context, top_k: int = 10) -> str:
@@ -150,13 +151,18 @@ def _register_tools(
         return _forget_memory(store, embedder, query, audit_log, user_id)
 
     @mcp.tool(annotations=_TOOL_ANNOTATIONS["forget_all_memory"])
-    def forget_all_memory(ctx: Context) -> str:
-        """Permanently delete the entire memory graph -- every entity and relation."""
+    def forget_all_memory(ctx: Context, confirm: bool = False) -> str:
+        """Permanently delete the entire memory graph -- every entity and relation.
+
+        See `memory_core.mcp_server.server.forget_all_memory`'s docstring for
+        why `confirm` exists: the first call (confirm left False) only
+        reports what would be deleted, never deletes anything itself.
+        """
         user_id = resolve_user_id(ctx)
         store, _ = stores.resolve(user_id)
         if usage_tracker is not None:
             usage_tracker.record_event(user_id, "forget_all_memory")
-        return _forget_all_memory(store, audit_log, user_id)
+        return _forget_all_memory(store, audit_log, user_id, confirm=confirm)
 
     @mcp.tool(annotations=_TOOL_ANNOTATIONS["get_graph"])
     def get_graph(entity_name: str, ctx: Context, hops: int = 1) -> str:

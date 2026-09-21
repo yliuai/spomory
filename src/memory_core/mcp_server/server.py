@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import Context, MCPServer
 from mcp_types import ToolAnnotations
 
 from memory_core.audit import AuditLog
@@ -49,11 +49,11 @@ def build_server(
     ingestor = IncrementalIngestor(store, llm, policy=RuleBasedPolicy())
 
     @mcp.tool(annotations=_TOOL_ANNOTATIONS["add_memory"])
-    def add_memory(text: str, source_id: str = "mcp-session") -> str:
+    def add_memory(text: str, ctx: Context, source_id: str = "mcp-session") -> str:
         """Extract facts from `text` and write them into the memory graph."""
         if usage_tracker is not None:
             usage_tracker.record_event(user_id, "add_memory")
-        return _add_memory(ingestor, text, source_id)
+        return _add_memory(ingestor, text, source_id, client_name=_client_name_from_context(ctx))
 
     @mcp.tool(annotations=_TOOL_ANNOTATIONS["search_memory"])
     def search_memory(query: str, top_k: int = 10) -> str:
@@ -79,17 +79,27 @@ def build_server(
         return _forget_memory(store, embedder, query, audit_log, user_id)
 
     @mcp.tool(annotations=_TOOL_ANNOTATIONS["forget_all_memory"])
-    def forget_all_memory() -> str:
+    def forget_all_memory(confirm: bool = False) -> str:
         """Permanently delete the entire memory graph -- every entity and relation.
 
         `forget_memory` is deliberately one-fact-at-a-time; this is its
         bulk counterpart for a user who wants a clean slate (e.g. before
         re-testing, or a genuine full data wipe) instead of narrowing and
         retrying a query N times.
+
+        `destructive_hint=True` on this tool's annotations is only a hint --
+        the MCP spec doesn't require a host to gate on it, so a host that
+        treats it as advisory (or an agent auto-approving destructive tools)
+        could otherwise wipe everything on the first call with no human in
+        the loop at all. `confirm` is the actual enforcement: the first call
+        (confirm left at its default, False) never deletes anything -- it
+        only reports what a real call would remove -- so triggering a wipe
+        needs an explicit second call with confirm=True, regardless of what
+        the host's UI does or doesn't show.
         """
         if usage_tracker is not None:
             usage_tracker.record_event(user_id, "forget_all_memory")
-        return _forget_all_memory(store, audit_log, user_id)
+        return _forget_all_memory(store, audit_log, user_id, confirm=confirm)
 
     @mcp.tool(annotations=_TOOL_ANNOTATIONS["get_graph"])
     def get_graph(entity_name: str, hops: int = 1) -> str:
@@ -132,12 +142,44 @@ _TOOL_ANNOTATIONS = {
 }
 
 
-def _add_memory(ingestor: IncrementalIngestor, text: str, source_id: str) -> str:
-    result = ingestor.ingest(text, source_id=source_id)
-    return (
+def _client_name_from_context(ctx: Context | None) -> str | None:
+    """The calling MCP client's declared name from its `initialize` handshake
+    (e.g. `claude-ai`, `cursor`) -- `None` for a stdio server invoked outside
+    a request context in tests, or a client that didn't declare `clientInfo`.
+    Used to tell "the same session correcting itself" apart from "two
+    different clients wrote contradicting facts" -- see
+    RuleBasedPolicy.decide()'s docstring."""
+    if ctx is None:
+        return None
+    try:
+        client_params = ctx.session.client_params
+    except ValueError:
+        # Raised by Context.session when there's no real request behind this
+        # Context -- true for a bare Context() built outside an actual call
+        # (as the test harness's call_tool() does), never for a real client
+        # connection. Capturing client identity is best-effort; it should
+        # never be the reason add_memory itself fails.
+        return None
+    if client_params is None or client_params.client_info is None:
+        return None
+    return client_params.client_info.name
+
+
+def _add_memory(
+    ingestor: IncrementalIngestor, text: str, source_id: str, client_name: str | None = None
+) -> str:
+    result = ingestor.ingest(text, source_id=source_id, client_name=client_name)
+    message = (
         f"新增实体 {result.new_entities} 个，合并已有实体 {result.merged_entities} 个，"
         f"新增关系 {result.new_relations} 条"
     )
+    if result.conflicting_relation_ids:
+        message += (
+            f"；其中 {len(result.conflicting_relation_ids)} 条与另一个客户端此前记录的事实矛盾，"
+            "两条都保留了下来，没有自动判断哪个对——可以用 get_graph 查看具体内容，"
+            "需要的话再用 forget_memory 手动删掉过时的那条"
+        )
+    return message
 
 
 def _search_memory(store: GraphStoreBase, embedder, query: str, top_k: int) -> str:
@@ -200,11 +242,20 @@ def _forget_memory(
     return f"已忘记：{forgotten}"
 
 
-def _forget_all_memory(store: GraphStoreBase, audit_log: AuditLog | None, user_id: str) -> str:
+def _forget_all_memory(
+    store: GraphStoreBase, audit_log: AuditLog | None, user_id: str, confirm: bool = False
+) -> str:
     entities_deleted = len(store.all_entities())
     relations_deleted = len(store.all_relations())
     if entities_deleted == 0 and relations_deleted == 0:
         return "记忆图谱是空的，没有可以忘记的内容。"
+
+    if not confirm:
+        return (
+            f"这将永久删除整个记忆图谱：{entities_deleted} 个实体、{relations_deleted} 条关系，"
+            "且不可恢复。还没有执行任何删除。确认要继续的话，再调用一次 "
+            "forget_all_memory(confirm=true)。"
+        )
 
     store.delete_all()
 

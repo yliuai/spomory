@@ -72,6 +72,11 @@ class IngestResult:
     updated_relations: int = 0
     noop_relations: int = 0
     entity_ids_by_name: dict[str, str] = field(default_factory=dict)
+    # Ids of existing relations a new one contradicted (same subject+
+    # predicate, different object) *and* that came from a different declared
+    # MCP client -- kept as a separate relation rather than silently
+    # overwritten. See RuleBasedPolicy.decide()'s docstring for why.
+    conflicting_relation_ids: list[str] = field(default_factory=list)
 
 
 class IncrementalIngestor:
@@ -101,7 +106,7 @@ class IncrementalIngestor:
         self.llm = llm
         self.policy = policy
 
-    def ingest(self, text: str, source_id: str) -> IngestResult:
+    def ingest(self, text: str, source_id: str, client_name: str | None = None) -> IngestResult:
         result = IngestResult()
         if _is_low_information(text):
             return result
@@ -135,7 +140,13 @@ class IncrementalIngestor:
                 subject_id=subject_id,
                 predicate=candidate.predicate,
                 object_id=object_id,
-                provenance=[Provenance(source_id=source_id, source_span=candidate.source_span)],
+                provenance=[
+                    Provenance(
+                        source_id=source_id,
+                        source_span=candidate.source_span,
+                        client_name=client_name,
+                    )
+                ],
             )
 
             if self.policy is None:
@@ -166,6 +177,8 @@ class IncrementalIngestor:
 
         if action.action_type is ActionType.ADD:
             result.new_relations += 1
+            if action.conflict_with is not None:
+                result.conflicting_relation_ids.append(action.conflict_with)
         elif action.action_type is ActionType.UPDATE:
             result.updated_relations += 1
         elif action.action_type is ActionType.NOOP:

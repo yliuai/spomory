@@ -1,7 +1,7 @@
 import pytest
 
 from memory_core.graph.local_store import LocalGraphStore
-from memory_core.graph.models import Entity, Relation
+from memory_core.graph.models import Entity, Provenance, Relation
 from memory_core.memory_manager.actions import ActionType
 from memory_core.memory_manager.policy import RuleBasedPolicy
 
@@ -49,6 +49,68 @@ def test_rule_based_updates_when_object_changes(tmp_path):
     assert action.action_type is ActionType.UPDATE
     assert action.target_id == existing.id
     assert action.updates["object_id"] == c.id
+
+
+def _provenance(client_name: str | None) -> Provenance:
+    return Provenance(source_id="s", source_span="span", client_name=client_name)
+
+
+def test_rule_based_keeps_both_on_cross_client_conflict(tmp_path):
+    """The failure mode a real reviewer called out: two clients writing
+    contradicting facts, with nothing in a memory graph making the newer one
+    right. When both sides declare a *different* MCP client, decide() must
+    not silently pick a winner."""
+    a, b, c = (Entity(name=n, type="thing") for n in "abc")
+    existing = Relation(
+        subject_id=a.id, predicate="任职于", object_id=b.id, provenance=[_provenance("claude-ai")]
+    )
+    store = _store_with(tmp_path, existing, a, b)
+    store.add_entities([c])
+    candidate = Relation(
+        subject_id=a.id, predicate="任职于", object_id=c.id, provenance=[_provenance("cursor")]
+    )
+
+    action = RuleBasedPolicy().decide(candidate, store)
+
+    assert action.action_type is ActionType.ADD
+    assert action.relation == candidate
+    assert action.conflict_with == existing.id
+
+
+def test_rule_based_still_updates_on_same_client_correction(tmp_path):
+    """Same client, same session correcting itself -- the ambiguous-but-
+    probably-fine case -- keeps the existing unconditional-UPDATE behavior."""
+    a, b, c = (Entity(name=n, type="thing") for n in "abc")
+    existing = Relation(
+        subject_id=a.id, predicate="任职于", object_id=b.id, provenance=[_provenance("claude-ai")]
+    )
+    store = _store_with(tmp_path, existing, a, b)
+    store.add_entities([c])
+    candidate = Relation(
+        subject_id=a.id, predicate="任职于", object_id=c.id, provenance=[_provenance("claude-ai")]
+    )
+
+    action = RuleBasedPolicy().decide(candidate, store)
+
+    assert action.action_type is ActionType.UPDATE
+    assert action.conflict_with is None
+
+
+def test_rule_based_updates_when_client_identity_is_unknown(tmp_path):
+    """Neither side declaring a client (the common case today, since most
+    callers don't pass clientInfo through) can't be told apart from a
+    same-client correction -- falls through to the existing UPDATE behavior
+    rather than assuming a conflict that can't actually be confirmed."""
+    a, b, c = (Entity(name=n, type="thing") for n in "abc")
+    existing = Relation(subject_id=a.id, predicate="任职于", object_id=b.id)  # no provenance at all
+    store = _store_with(tmp_path, existing, a, b)
+    store.add_entities([c])
+    candidate = Relation(subject_id=a.id, predicate="任职于", object_id=c.id)
+
+    action = RuleBasedPolicy().decide(candidate, store)
+
+    assert action.action_type is ActionType.UPDATE
+    assert action.conflict_with is None
 
 
 @pytest.mark.slow

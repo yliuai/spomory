@@ -18,6 +18,10 @@ class MemoryPolicy(ABC):
         raise NotImplementedError
 
 
+def _client_name(relation: Relation) -> str | None:
+    return relation.provenance[-1].client_name if relation.provenance else None
+
+
 class RuleBasedPolicy(MemoryPolicy):
     """Heuristic baseline: ADD anything new; if a relation already exists with
     the same subject+predicate but a different object, UPDATE it (the fact
@@ -25,6 +29,20 @@ class RuleBasedPolicy(MemoryPolicy):
     duplicates. Never DELETEs on its own (no rule can safely infer "this is
     now false" from one new sentence) — that's exactly the gap Epic 3's GRPO
     policy is meant to fill in over this baseline.
+
+    The UPDATE branch is a real limitation, not just a simplification: it
+    always treats the *incoming* candidate as correct, with no comparison of
+    timestamps, confidence, or anything else -- there's nothing here that
+    makes the newer one right. The one case this does guard against: when
+    both the existing and incoming relation declare a *different* MCP
+    client (Provenance.client_name), this isn't "the same session correcting
+    itself," it's two clients disagreeing -- and picking a winner there would
+    be a pure guess. So that specific case keeps both relations (ADD) and
+    flags the conflict via MemoryAction.conflict_with, instead of silently
+    overwriting. Client identity is unverified for a same-client update or
+    when either side didn't declare one (older clients, missing handshake
+    info) -- that ambiguous majority of cases still falls through to the
+    unconditional UPDATE below.
     """
 
     def decide(self, candidate: Relation, store: GraphStoreBase) -> MemoryAction:
@@ -44,6 +62,12 @@ class RuleBasedPolicy(MemoryPolicy):
             return MemoryAction(ActionType.NOOP, target_id=same.id)
 
         outdated = existing[0]
+
+        candidate_client = _client_name(candidate)
+        outdated_client = _client_name(outdated)
+        if candidate_client and outdated_client and candidate_client != outdated_client:
+            return MemoryAction(ActionType.ADD, relation=candidate, conflict_with=outdated.id)
+
         return MemoryAction(
             ActionType.UPDATE,
             target_id=outdated.id,
@@ -113,6 +137,11 @@ class TrainedPolicy(MemoryPolicy):
             # than being a true no-op (see RuleBasedPolicy above).
             return MemoryAction(ActionType.NOOP, target_id=same.id)
         outdated = existing[0]
+        candidate_client = _client_name(candidate)
+        outdated_client = _client_name(outdated)
+        if candidate_client and outdated_client and candidate_client != outdated_client:
+            return MemoryAction(ActionType.ADD, relation=candidate, conflict_with=outdated.id)
+
         return MemoryAction(
             ActionType.UPDATE,
             target_id=outdated.id,

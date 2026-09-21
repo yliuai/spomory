@@ -137,7 +137,15 @@ def test_forget_all_memory_clears_the_whole_graph():
         store, FakeLLMProvider([]), FakeEmbeddingProvider(), audit_log=audit_log, user_id="u1"
     )
 
-    result = asyncio.run(server.call_tool("forget_all_memory", {}))
+    # First call (no confirm): reports the counts, deletes nothing -- this is
+    # the actual safety mechanism, since destructive_hint is only a hint a
+    # host isn't required to gate on.
+    dry_run = asyncio.run(server.call_tool("forget_all_memory", {}))
+    assert "2" in str(dry_run) and "1" in str(dry_run)
+    assert store.all_entities() != []
+    assert audit_log.query("u1") == []
+
+    result = asyncio.run(server.call_tool("forget_all_memory", {"confirm": True}))
     assert "2" in str(result) and "1" in str(result)  # 2 entities, 1 relation
 
     assert store.all_entities() == []
@@ -155,3 +163,50 @@ def test_forget_all_memory_on_empty_graph_is_a_no_op():
     result = asyncio.run(server.call_tool("forget_all_memory", {}))
 
     assert "空" in str(result)
+
+
+def test_forget_all_memory_without_confirm_never_deletes():
+    """destructive_hint is only a hint a host isn't required to gate on --
+    confirm is the actual enforcement, so a bare call (however it got
+    triggered) must be a pure dry-run report, never a deletion."""
+    from memory_core.graph.models import Entity
+
+    store = LocalGraphStore(":memory:")
+    store.add_entities([Entity(name="张三", type="person")])
+    server = build_server(store, FakeLLMProvider([]), FakeEmbeddingProvider())
+
+    for args in ({}, {"confirm": False}):
+        result = asyncio.run(server.call_tool("forget_all_memory", args))
+        assert "1" in str(result)
+        assert store.all_entities() != []
+
+
+def test_client_name_from_context_is_none_outside_a_real_request():
+    from mcp.server.mcpserver import Context
+
+    from memory_core.mcp_server.server import _client_name_from_context
+
+    assert _client_name_from_context(None) is None
+    assert _client_name_from_context(Context()) is None
+
+
+def test_client_name_from_context_reads_the_declared_client_info():
+    from dataclasses import dataclass
+
+    from memory_core.mcp_server.server import _client_name_from_context
+
+    @dataclass
+    class _ClientInfo:
+        name: str
+
+    @dataclass
+    class _ClientParams:
+        client_info: _ClientInfo
+
+    class _Session:
+        client_params = _ClientParams(client_info=_ClientInfo(name="cursor"))
+
+    class _FakeContext:
+        session = _Session()
+
+    assert _client_name_from_context(_FakeContext()) == "cursor"

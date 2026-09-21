@@ -35,6 +35,13 @@ class MemoryAction:
     relation: Relation | None = None
     target_id: str | None = None
     updates: dict[str, object] | None = None
+    # Set on an ADD only when this candidate contradicts an existing relation
+    # (same subject+predicate, different object) written by a *different*
+    # declared MCP client -- the id of that existing, now-contradicted
+    # relation. apply_action() ignores this field (an ADD is still just an
+    # ADD); it exists purely so callers can report "kept both, these
+    # conflict" instead of the write silently picking a winner.
+    conflict_with: str | None = None
 
 
 def apply_action(action: MemoryAction, store: GraphStoreBase) -> None:

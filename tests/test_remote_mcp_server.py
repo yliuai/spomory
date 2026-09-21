@@ -139,7 +139,9 @@ def test_forget_all_memory_only_clears_the_calling_users_data():
         )
 
         asyncio.run(
-            server.call_tool("forget_all_memory", {}, context=_context({"x-api-key": key_a}))
+            server.call_tool(
+                "forget_all_memory", {"confirm": True}, context=_context({"x-api-key": key_a})
+            )
         )
 
         result_a = asyncio.run(

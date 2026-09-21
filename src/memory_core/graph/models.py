@@ -31,6 +31,18 @@ class Provenance(BaseModel):
     source_id: str = Field(description="Opaque id of the source document/conversation/etc.")
     source_span: str = Field(description="Verbatim text snippet this fact was derived from")
     extractor: str = Field(default="unknown", description="Name/version of the extraction pipeline")
+    client_name: str | None = Field(
+        default=None,
+        description=(
+            "The MCP client's declared name from its initialize handshake "
+            "(e.g. 'claude-ai', 'cursor') -- captured automatically from the "
+            "protocol, not something the caller passes as a tool argument. "
+            "None when unavailable (older clients, or a caller that didn't "
+            "declare clientInfo). Used to tell 'the same session correcting "
+            "itself' apart from 'two different clients wrote contradicting "
+            "facts', so RuleBasedPolicy.decide() doesn't have to guess."
+        ),
+    )
 
 
 class Entity(BaseModel):
