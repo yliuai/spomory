@@ -27,7 +27,7 @@ Codex CLI 里显示的名字是 **Spomory**（`src/memory_core/mcp_server/server
 | `add_memory` | `text`, `source_id="mcp-session"` | 从一段文本里抽取事实（实体+关系）写入记忆图谱，返回新增/合并的实体数和新增关系数 |
 | `search_memory` | `query`, `top_k=10` | 先做三元组匹配，再用 Personalized PageRank 在图上扩展排序，组装成一段自然语言上下文返回 |
 | `forget_memory` | `query` | 找到与查询语义最匹配的**一条**关系并物理删除；删除后若某个端点实体变成孤立节点也一并清理，并写入审计日志。每次只删一条是故意的保守设计——模糊的查询应该改用更具体的措辞重试，而不是一次性删掉多条 |
-| `forget_all_memory` | （无参数） | 一次性物理删除整个记忆图谱——所有实体、关系、以及归档的历史版本，写入一条审计日志。`forget_memory` 刻意一次只删一条，这个是它的批量版本，给想要"清空重来"的场景用，不用把 `forget_memory` 调 N 次 |
+| `forget_all_memory` | `confirm=false` | 一次性物理删除整个记忆图谱——所有实体、关系、以及归档的历史版本，写入一条审计日志。`forget_memory` 刻意一次只删一条，这个是它的批量版本，给想要"清空重来"的场景用，不用把 `forget_memory` 调 N 次。**两步式设计（2026-09-21 加入）**：不传 `confirm`（默认 `false`）的调用不会删除任何东西，只会报告真正执行会删掉多少。这个工具标了 `destructive_hint=true`，但 MCP 协议里这只是个提示，不要求客户端一定拦截——真正起防护作用的是 `confirm` 这个参数，不管客户端把这个提示当真还是当摆设，或者调用方是个自动批准危险操作的 agent，都得显式带 `confirm=true` 再调一次才会真的删 |
 | `get_graph` | `entity_name`, `hops=1` | 返回以某实体为中心、指定跳数内的子图，JSON 格式（`entities` + `relations`） |
 | `export_memory` | `subject_id="default"` | 把整个记忆图谱导出成 JSON 格式的"记忆护照"（memory passport），对应"数据自主权"承诺 |
 
