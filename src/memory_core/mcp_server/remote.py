@@ -51,6 +51,7 @@ from memory_core.mcp_server.server import (
     _forget_memory,
     _get_graph,
     _search_memory,
+    _session_id_from_context,
 )
 from memory_core.memory_manager.policy import RuleBasedPolicy
 from memory_core.usage import UsageTracker
@@ -130,7 +131,13 @@ def _register_tools(
         _, ingestor = stores.resolve(user_id)
         if usage_tracker is not None:
             usage_tracker.record_event(user_id, "add_memory")
-        return _add_memory(ingestor, text, source_id, client_name=_client_name_from_context(ctx))
+        return _add_memory(
+            ingestor,
+            text,
+            source_id,
+            client_name=_client_name_from_context(ctx),
+            session_id=_session_id_from_context(ctx),
+        )
 
     @mcp.tool(annotations=_TOOL_ANNOTATIONS["search_memory"])
     def search_memory(query: str, ctx: Context, top_k: int = 10) -> str:

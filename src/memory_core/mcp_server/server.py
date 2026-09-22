@@ -53,7 +53,13 @@ def build_server(
         """Extract facts from `text` and write them into the memory graph."""
         if usage_tracker is not None:
             usage_tracker.record_event(user_id, "add_memory")
-        return _add_memory(ingestor, text, source_id, client_name=_client_name_from_context(ctx))
+        return _add_memory(
+            ingestor,
+            text,
+            source_id,
+            client_name=_client_name_from_context(ctx),
+            session_id=_session_id_from_context(ctx),
+        )
 
     @mcp.tool(annotations=_TOOL_ANNOTATIONS["search_memory"])
     def search_memory(query: str, top_k: int = 10) -> str:
@@ -165,10 +171,36 @@ def _client_name_from_context(ctx: Context | None) -> str | None:
     return client_params.client_info.name
 
 
+def _session_id_from_context(ctx: Context | None) -> str | None:
+    """This connection's server-assigned session id -- populated on remote/
+    streamable-http deployments (from the `Mcp-Session-Id` the transport
+    assigns at connect time), `None` on local stdio (one process is one
+    connection, nothing finer to distinguish) or outside a real request.
+
+    Deliberately reached from the connection object the server itself
+    assigned, not from a request header: `Context.headers` documents that
+    headers are client-supplied and must never be treated as an identity
+    assertion, which is exactly the property this value needs to have --
+    unlike a header, a client can't set this to whatever it wants. There's
+    no public accessor for it on `Context`/`ServerSession`, so this reaches
+    into a private attribute; best-effort, degrades to `None` rather than
+    raising if the SDK's internals change shape in a future version."""
+    if ctx is None:
+        return None
+    try:
+        return ctx.session._connection.session_id
+    except (ValueError, AttributeError):
+        return None
+
+
 def _add_memory(
-    ingestor: IncrementalIngestor, text: str, source_id: str, client_name: str | None = None
+    ingestor: IncrementalIngestor,
+    text: str,
+    source_id: str,
+    client_name: str | None = None,
+    session_id: str | None = None,
 ) -> str:
-    result = ingestor.ingest(text, source_id=source_id, client_name=client_name)
+    result = ingestor.ingest(text, source_id=source_id, client_name=client_name, session_id=session_id)
     message = (
         f"新增实体 {result.new_entities} 个，合并已有实体 {result.merged_entities} 个，"
         f"新增关系 {result.new_relations} 条"

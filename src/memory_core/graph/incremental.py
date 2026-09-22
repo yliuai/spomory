@@ -106,7 +106,13 @@ class IncrementalIngestor:
         self.llm = llm
         self.policy = policy
 
-    def ingest(self, text: str, source_id: str, client_name: str | None = None) -> IngestResult:
+    def ingest(
+        self,
+        text: str,
+        source_id: str,
+        client_name: str | None = None,
+        session_id: str | None = None,
+    ) -> IngestResult:
         result = IngestResult()
         if _is_low_information(text):
             return result
@@ -145,6 +151,7 @@ class IncrementalIngestor:
                         source_id=source_id,
                         source_span=candidate.source_span,
                         client_name=client_name,
+                        session_id=session_id,
                     )
                 ],
             )

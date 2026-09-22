@@ -210,3 +210,41 @@ def test_client_name_from_context_reads_the_declared_client_info():
         session = _Session()
 
     assert _client_name_from_context(_FakeContext()) == "cursor"
+
+
+def test_session_id_from_context_is_none_outside_a_real_request():
+    from mcp.server.mcpserver import Context
+
+    from memory_core.mcp_server.server import _session_id_from_context
+
+    assert _session_id_from_context(None) is None
+    assert _session_id_from_context(Context()) is None
+
+
+def test_session_id_from_context_reads_the_connections_session_id():
+    from memory_core.mcp_server.server import _session_id_from_context
+
+    class _Connection:
+        session_id = "mcp-session-abc123"
+
+    class _Session:
+        _connection = _Connection()
+
+    class _FakeContext:
+        session = _Session()
+
+    assert _session_id_from_context(_FakeContext()) == "mcp-session-abc123"
+
+
+def test_session_id_from_context_is_none_when_the_sdk_shape_changes():
+    """Best-effort by design: reaching into a private SDK attribute should
+    degrade to None, never raise, if that attribute doesn't exist."""
+    from memory_core.mcp_server.server import _session_id_from_context
+
+    class _Session:
+        pass  # no _connection at all
+
+    class _FakeContext:
+        session = _Session()
+
+    assert _session_id_from_context(_FakeContext()) is None

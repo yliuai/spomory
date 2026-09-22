@@ -40,7 +40,25 @@ class Provenance(BaseModel):
             "None when unavailable (older clients, or a caller that didn't "
             "declare clientInfo). Used to tell 'the same session correcting "
             "itself' apart from 'two different clients wrote contradicting "
-            "facts', so RuleBasedPolicy.decide() doesn't have to guess."
+            "facts', so RuleBasedPolicy.decide() doesn't have to guess. "
+            "Coarse: identifies the client *application* (e.g. 'claude-ai'), "
+            "not a specific window/connection of it -- two Claude Desktop "
+            "windows on the same machine report the same client_name. See "
+            "session_id for the finer-grained signal that tells those apart."
+        ),
+    )
+    session_id: str | None = Field(
+        default=None,
+        description=(
+            "This connection's server-assigned session id (remote/"
+            "streamable-http deployments only; None on local stdio, where "
+            "one process is one connection and there's nothing finer to "
+            "distinguish). Server-assigned at connect time, not read from a "
+            "client-supplied header -- unlike a header, a client can't set "
+            "this to whatever it wants. Combined with client_name so 'two "
+            "windows of the same app' (identical client_name, different "
+            "session_id) is still recognized as a genuine cross-connection "
+            "conflict instead of a same-session correction."
         ),
     )
 

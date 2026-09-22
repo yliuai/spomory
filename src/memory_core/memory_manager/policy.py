@@ -18,8 +18,37 @@ class MemoryPolicy(ABC):
         raise NotImplementedError
 
 
-def _client_name(relation: Relation) -> str | None:
-    return relation.provenance[-1].client_name if relation.provenance else None
+def _client_identity(relation: Relation) -> tuple[str | None, str | None]:
+    if not relation.provenance:
+        return None, None
+    last = relation.provenance[-1]
+    return last.client_name, last.session_id
+
+
+def _is_cross_client_conflict(candidate: Relation, outdated: Relation) -> bool:
+    """True when `candidate` and `outdated` can be *confirmed* to have come
+    from different MCP connections -- either a different declared client, or
+    the same declared client but a different connection-scoped session id
+    (two windows of the same app on one machine report an identical
+    client_name but distinct session ids on the remote/streamable-http
+    path -- a real gap in an earlier version of this check, which only
+    compared client_name).
+
+    Conservative by construction: whenever a signal needed to tell them
+    apart is missing on either side, this returns False and the existing
+    update-in-place behavior applies. Unconfirmed is never treated as
+    confirmed-different -- a false NOOP-to-UPDATE costs a kept-but-outdated
+    fact next to a correction; a false ADD-as-conflict costs a spurious
+    duplicate every ordinary correction never actually needed.
+    """
+    candidate_name, candidate_session = _client_identity(candidate)
+    outdated_name, outdated_session = _client_identity(outdated)
+
+    if not candidate_name or not outdated_name:
+        return False
+    if candidate_name != outdated_name:
+        return True
+    return bool(candidate_session and outdated_session and candidate_session != outdated_session)
 
 
 class RuleBasedPolicy(MemoryPolicy):
@@ -33,16 +62,20 @@ class RuleBasedPolicy(MemoryPolicy):
     The UPDATE branch is a real limitation, not just a simplification: it
     always treats the *incoming* candidate as correct, with no comparison of
     timestamps, confidence, or anything else -- there's nothing here that
-    makes the newer one right. The one case this does guard against: when
-    both the existing and incoming relation declare a *different* MCP
-    client (Provenance.client_name), this isn't "the same session correcting
-    itself," it's two clients disagreeing -- and picking a winner there would
-    be a pure guess. So that specific case keeps both relations (ADD) and
-    flags the conflict via MemoryAction.conflict_with, instead of silently
-    overwriting. Client identity is unverified for a same-client update or
-    when either side didn't declare one (older clients, missing handshake
-    info) -- that ambiguous majority of cases still falls through to the
-    unconditional UPDATE below.
+    makes the newer one right. The one case this does guard against:
+    `_is_cross_client_conflict()` -- when the existing and incoming relation
+    can be *confirmed* to have come from different MCP connections (either a
+    different declared client, or the same declared client but a different
+    connection-scoped session id -- two windows of the same app on one
+    machine share a client_name but not a session_id), this isn't "the same
+    session correcting itself," it's two connections disagreeing -- and
+    picking a winner there would be a pure guess. So that specific case
+    keeps both relations (ADD) and flags the conflict via
+    MemoryAction.conflict_with, instead of silently overwriting. Identity is
+    unverified for a same-client-same-session update or when a needed signal
+    is missing on either side (older clients, local stdio's session_id,
+    missing handshake info) -- that ambiguous majority of cases still falls
+    through to the unconditional UPDATE below.
     """
 
     def decide(self, candidate: Relation, store: GraphStoreBase) -> MemoryAction:
@@ -63,9 +96,7 @@ class RuleBasedPolicy(MemoryPolicy):
 
         outdated = existing[0]
 
-        candidate_client = _client_name(candidate)
-        outdated_client = _client_name(outdated)
-        if candidate_client and outdated_client and candidate_client != outdated_client:
+        if _is_cross_client_conflict(candidate, outdated):
             return MemoryAction(ActionType.ADD, relation=candidate, conflict_with=outdated.id)
 
         return MemoryAction(
@@ -137,9 +168,7 @@ class TrainedPolicy(MemoryPolicy):
             # than being a true no-op (see RuleBasedPolicy above).
             return MemoryAction(ActionType.NOOP, target_id=same.id)
         outdated = existing[0]
-        candidate_client = _client_name(candidate)
-        outdated_client = _client_name(outdated)
-        if candidate_client and outdated_client and candidate_client != outdated_client:
+        if _is_cross_client_conflict(candidate, outdated):
             return MemoryAction(ActionType.ADD, relation=candidate, conflict_with=outdated.id)
 
         return MemoryAction(

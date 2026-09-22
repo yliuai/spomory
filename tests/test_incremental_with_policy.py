@@ -70,6 +70,29 @@ def test_cross_client_conflict_keeps_both_and_is_reported():
     assert objects == {"老公司", "新公司"}
 
 
+def test_same_app_different_session_is_still_a_conflict():
+    """Two windows of the same client app (identical client_name, distinct
+    session_id) must be treated the same as two different clients -- the
+    gap a reviewer caught in the client_name-only version of this check."""
+    store = LocalGraphStore(":memory:")
+    policy = RuleBasedPolicy()
+    ingestor = IncrementalIngestor(store, FakeLLMProvider([]), policy)
+
+    ingestor.llm = FakeLLMProvider([_triple("张三", "任职于", "老公司")])
+    ingestor.ingest("张三在老公司工作", source_id="doc-1", client_name="claude-ai", session_id="window-1")
+    old_relation = store.all_relations()[0]
+
+    ingestor.llm = FakeLLMProvider([_triple("张三", "任职于", "新公司")])
+    result = ingestor.ingest(
+        "张三换工作去了新公司", source_id="doc-2", client_name="claude-ai", session_id="window-2"
+    )
+
+    assert result.updated_relations == 0
+    assert result.new_relations == 1
+    assert result.conflicting_relation_ids == [old_relation.id]
+    assert len(store.all_relations()) == 2  # both kept
+
+
 def test_no_policy_keeps_old_always_add_behavior():
     store = LocalGraphStore(":memory:")
     ingestor = IncrementalIngestor(store, FakeLLMProvider([_triple("a", "r", "b")]))  # policy=None
