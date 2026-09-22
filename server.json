@@ -6,12 +6,12 @@
     "url": "https://github.com/yliuai/spomory",
     "source": "github"
   },
-  "version": "0.2.0",
+  "version": "0.2.1",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "spomory",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "registryBaseUrl": "https://pypi.org",
       "runtimeHint": "uvx",
       "runtimeArguments": [
