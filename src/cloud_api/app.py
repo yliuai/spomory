@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import html
 import logging
+import secrets
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import TYPE_CHECKING
 
@@ -151,6 +152,7 @@ def create_app(
     cors_allowed_origins: list[str] | None = None,
     demo_llm: LLMProvider | None = None,
     demo_embedder: object | None = None,
+    admin_stats_token: str | None = None,
 ) -> FastAPI:
     """`allowed_hosts` is the MCP transport's DNS-rebinding-protection
     allowlist (checked against the request's `Host` header) -- it applies to
@@ -202,6 +204,15 @@ def create_app(
     account). The `/request`+`/verify` pair only ever hands out a key after
     a link mailed to that address is clicked, so registering requires
     actually reading mail sent there.
+
+    `admin_stats_token` is opt-in like `email_sender`/OAuth above: only
+    mounts `GET /admin/stats` when set, so an existing deployment's env
+    file keeps working unchanged until someone deliberately adds
+    `ADMIN_STATS_TOKEN`. Backs the website's operator-only dashboard
+    (Epic W11) -- returns aggregate counts only (user/demo-attempt counts
+    grouped by day, registration-funnel totals), never a raw email or any
+    other per-user value, so a leaked dashboard page can't turn into a
+    user-data leak the way a raw export would.
     """
     store = auth_store or AuthStore()
 
@@ -312,6 +323,21 @@ def create_app(
                     status_code=503, detail="failed to process the demo request -- try again"
                 ) from None
             return DemoResponse(**result)
+
+    if admin_stats_token is not None:
+
+        @app.get("/admin/stats")
+        def admin_stats(x_admin_token: str | None = Header(default=None)) -> dict[str, object]:
+            # secrets.compare_digest, not `!=`: a naive comparison leaks how
+            # many leading characters matched through response-time
+            # differences, letting the token be guessed one character at a
+            # time. Every other credential check in this file already goes
+            # through hashing (API keys) or a single-use DB token
+            # (registration verify) instead of a raw string compare, so this
+            # is the one place that needs it done explicitly.
+            if x_admin_token is None or not secrets.compare_digest(x_admin_token, admin_stats_token):
+                raise HTTPException(status_code=401, detail="invalid or missing x-admin-token")
+            return store.admin_stats()
 
     base_url = oauth_base_url.rstrip("/") if oauth_base_url else None
 

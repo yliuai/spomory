@@ -233,6 +233,51 @@ class AuthStore:
         ).fetchone()
         return row[0]
 
+    def admin_stats(self) -> dict[str, object]:
+        """Aggregate counts for the operator-only dashboard (website repo's
+        Epic W11) -- deliberately returns only counts grouped by day, never
+        a raw email or any other per-user value. The registration funnel
+        answers "where do people actually drop off": how many verification
+        emails were sent versus actually clicked, versus how many accounts
+        exist in total (which also includes the unverified plain
+        `POST /users/register` path, so `accounts_created` isn't expected
+        to equal `verification_emails_clicked` exactly)."""
+        users_total = self._conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        users_by_day = [
+            {"date": date, "count": count}
+            for date, count in self._conn.execute(
+                "SELECT date(created_at), COUNT(*) FROM users "
+                "GROUP BY date(created_at) ORDER BY date(created_at)"
+            ).fetchall()
+        ]
+        demo_attempts_by_day = [
+            {"date": date, "count": count}
+            for date, count in self._conn.execute(
+                "SELECT date(created_at), COUNT(*) FROM demo_attempts "
+                "GROUP BY date(created_at) ORDER BY date(created_at)"
+            ).fetchall()
+        ]
+        registration_attempts = self._conn.execute(
+            "SELECT COUNT(*) FROM registration_attempts"
+        ).fetchone()[0]
+        verification_emails_sent = self._conn.execute(
+            "SELECT COUNT(*) FROM registration_verification_tokens"
+        ).fetchone()[0]
+        verification_emails_clicked = self._conn.execute(
+            "SELECT COUNT(*) FROM registration_verification_tokens WHERE used = 1"
+        ).fetchone()[0]
+        return {
+            "users_total": users_total,
+            "users_by_day": users_by_day,
+            "demo_attempts_by_day": demo_attempts_by_day,
+            "registration_funnel": {
+                "attempts": registration_attempts,
+                "verification_emails_sent": verification_emails_sent,
+                "verification_emails_clicked": verification_emails_clicked,
+                "accounts_created": users_total,
+            },
+        }
+
     def check_and_record_demo_attempt(self, ip: str) -> bool:
         """Same pattern as `check_and_record_registration_attempt`: records
         first so a rejected attempt still counts, then reports whether this

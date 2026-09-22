@@ -134,6 +134,10 @@ def default_remote_app() -> FastAPI:
         # OAuth/email do: it's on wherever the base service is.
         demo_llm=llm,
         demo_embedder=embedder,
+        # Opt-in like OAuth/email above: GET /admin/stats only mounts once
+        # ADMIN_STATS_TOKEN is set, so an existing deployment's env file
+        # keeps working unchanged until this is deliberately turned on.
+        admin_stats_token=os.environ.get("ADMIN_STATS_TOKEN"),
     )
 
 
