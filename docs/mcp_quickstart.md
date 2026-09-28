@@ -3,7 +3,7 @@
 **[English](mcp_quickstart.en.md) | 中文**
 
 对应 TASKS.md Epic 6.2-6.4。这个 MCP Server 在 Claude Desktop / Cursor /
-Codex CLI 里显示的名字是 **Spomory**（`src/memory_core/mcp_server/server.py` 里
+Codex CLI / 豆包 里显示的名字是 **Spomory**（`src/memory_core/mcp_server/server.py` 里
 `MCPServer("Spomory")`），暴露六个工具：`add_memory`、`search_memory`、
 `get_graph`、`export_memory`、`forget_memory`（找到和查询最匹配的一条
 记忆并物理删除，是 `export_memory` 背后"真删除"能力第一次有了用户能在
@@ -15,10 +15,10 @@ Codex CLI 里显示的名字是 **Spomory**（`src/memory_core/mcp_server/server
 > 发布到 PyPI 上的包名是 `spomory`，对应两个等价的 CLI 命令
 > `memory-core-mcp`、`spomory-mcp`（同一个入口函数，用哪个都行）。只有
 > **注册到客户端的显示名字**需要精确写成 Spomory，Claude Desktop/Cursor/
-> Codex CLI 才会这么显示——这两者是独立的：`command` 字段指向哪个可执行文件决定实际跑什么代码，
-> `mcpServers` 这个 JSON 对象里的键才是 Claude Desktop/Cursor 界面上显示、
-> 以及日志文件命名（`mcp-server-<键名>.log`）用的名字。改名时两处都要跟着
-> 改，否则日志文件名和显示名字对不上，排查问题时容易搞混。
+> Codex CLI/豆包 才会这么显示——这两者是独立的：`command` 字段指向哪个可执行文件决定实际跑什么代码，
+> `mcpServers` 这个 JSON 对象里的键（或者图形化表单里的"服务器名称"）才是
+> 客户端界面上显示、以及日志文件命名（`mcp-server-<键名>.log`）用的名字。
+> 改名时两处都要跟着改，否则日志文件名和显示名字对不上，排查问题时容易搞混。
 
 ## 工具一览
 
@@ -31,7 +31,13 @@ Codex CLI 里显示的名字是 **Spomory**（`src/memory_core/mcp_server/server
 | `get_graph` | `entity_name`, `hops=1` | 返回以某实体为中心、指定跳数内的子图，JSON 格式（`entities` + `relations`） |
 | `export_memory` | `subject_id="default"` | 把整个记忆图谱导出成 JSON 格式的"记忆护照"（memory passport），对应"数据自主权"承诺 |
 
-## 安装
+## 通用配置与部署
+
+不管接下来用哪个客户端连接，这一节的内容都是共用的：怎么装、怎么配 LLM、
+本地数据存哪、怎么把远程/云端版本部署起来、怎么拿到 API Key、OAuth 怎么
+部署。各客户端自己的章节只讲"这个客户端具体怎么填配置"，不重复这些内容。
+
+### 安装
 
 ```bash
 # 最简单：直接装发布到 PyPI 的包，不用克隆仓库
@@ -46,7 +52,7 @@ uv pip install -e ".[llm,embedding,mcp]"
 server，要用 `docker run -i` 启动；挂载 `/data` 卷可以让数据在容器重启
 后保留。
 
-## 配置
+### LLM / Embedding 配置
 
 设置以下环境变量（默认走 OpenAI；国产 OpenAI 兼容 API 只需换
 `LLM_BASE_URL`/`LLM_MODEL`）：
@@ -58,7 +64,7 @@ export LLM_MODEL=deepseek-v4-flash             # 可选，默认 gpt-4o-mini
 export EMBEDDING_MODEL=BAAI/bge-m3             # 可选，默认 bge-m3
 ```
 
-### 完全本地运行（LLM 调用也不出网）
+#### 完全本地运行（LLM 调用也不出网）
 
 默认情况下 embedding 已经是本地跑的（上面那个 `sentence-transformers`
 模型），只有 LLM 抽取/生成这一步默认走 `LLM_BASE_URL` 指向的云端接口。
@@ -116,19 +122,20 @@ nomic-embed-text`）。vLLM、llama.cpp、MLX 理论上是同样的用法，但�
 export DATABASE_URL=postgresql://user:pass@host:5432/dbname   # 可选
 ```
 
-## 启动
+### 启动本地 Server
 
 ```bash
 memory-core-mcp
 ```
 
-## 接入 Claude Desktop / Cursor / Codex CLI
+### macOS 上的一个坑：不要把本地运行时装在 `~/Documents` 下
 
-### ⚠️ macOS 上不要把运行时装在 `~/Documents`（或 Desktop/Downloads）下
+这一条对**任何**走 STDIO 方式在本机拉起 Spomory 子进程的客户端都适用
+（Claude Desktop、Cursor、Codex CLI、豆包 STDIO 模式……），下面各客户端
+的 STDIO 小节都会引用这里。
 
 **真实踩过的坑**：如果 `command` 指向 `~/Documents/<project>/.venv/...`，
-Claude Desktop 启动 MCP Server 子进程时会报 `Server disconnected`，日志
-（`~/Library/Logs/Claude/mcp-server-<name>.log`）里能看到：
+客户端启动 MCP Server 子进程时会报 `Server disconnected`，日志里能看到：
 
 ```
 Fatal Python error: init_import_site: Failed to import the site module
@@ -138,10 +145,10 @@ PermissionError: [Errno 1] Operation not permitted: '.../.venv/pyvenv.cfg'
 
 根因是 macOS 的 TCC（隐私保护）机制：`~/Documents`、`~/Desktop`、
 `~/Downloads` 这几个文件夹默认对没有被显式授权"完全磁盘访问权限"的
-App 及其子进程是保护起来的，Claude Desktop spawn 出的 MCP Server 进程
-拿不到这个授权，连 Python 启动时读自己 venv 目录下的 `pyvenv.cfg` 都会被
-拒绝——**这和代码本身、和项目仓库放哪里没关系，纯粹是这几个特殊文件夹
-的系统级限制**。
+App 及其子进程是保护起来的，客户端 spawn 出的 MCP Server 进程拿不到这个
+授权，连 Python 启动时读自己 venv 目录下的 `pyvenv.cfg` 都会被拒绝——**这
+和代码本身、和项目仓库放哪里没关系，纯粹是这几个特殊文件夹的系统级
+限制**。
 
 **解决办法**：把 MCP Server 实际运行用的虚拟环境装在 `~/Documents`
 之外的普通目录（比如 `~/mcp-servers/`），用**非 editable**方式安装
@@ -154,135 +161,12 @@ uv pip install "/path/to/memory-core[llm,embedding,mcp]" \
     --python ~/mcp-servers/memory-core-venv/bin/python
 ```
 
-项目仓库本身（源码开发）留在哪里都无所谓，只有**这个专门给 Claude
-Desktop 用的运行时副本**需要挪到 `~/Documents` 之外。以后改了代码想让
-Claude Desktop 用上最新版本，重新跑一遍上面这条 `uv pip install` 命令
-（不带 `-e`）覆盖安装即可。
+项目仓库本身（源码开发）留在哪里都无所谓，只有**这个专门给客户端用的
+运行时副本**需要挪到 `~/Documents` 之外。以后改了代码想让客户端用上
+最新版本，重新跑一遍上面这条 `uv pip install` 命令（不带 `-e`）覆盖
+安装即可。
 
-### 配置
-
-在 `claude_desktop_config.json`（macOS 路径：
-`~/Library/Application Support/Claude/claude_desktop_config.json`）里加
-一段。`mcpServers` 下面这个键（下例中的 `"Spomory"`）就是 Claude
-Desktop 界面上显示的名字，可以按自己喜好改，但**改了之后要连带把下面
-"排查方法"里提到的日志文件名一起换**，两者是绑定的。`command` 写上面
-那个**非 Documents 路径**虚拟环境里 `memory-core-mcp` 的绝对路径——注意
-这个可执行文件名不用跟着显示名字改，它是包安装时固定生成的入口——Claude
-Desktop 启动子进程时也不一定继承你终端的 `PATH`，绝对路径最不容易出问题：
-
-```json
-{
-  "mcpServers": {
-    "Spomory": {
-      "command": "/Users/<you>/mcp-servers/memory-core-venv/bin/memory-core-mcp",
-      "env": {
-        "LLM_API_KEY": "...",
-        "LLM_BASE_URL": "https://api.deepseek.com",
-        "LLM_MODEL": "deepseek-v4-flash"
-      }
-    }
-  }
-}
-```
-
-如果这个 JSON 文件里已经有别的键（比如 Claude Desktop 自己的其他偏好
-设置），只在顶层加 `mcpServers` 这一个键，不要动其他内容——改之前建议
-先复制一份备份。改完配置后完全退出并重新打开 Claude Desktop 才会生效。
-
-### Cursor
-
-Cursor 用同样结构的 MCP 配置文件：全局配置在 `~/.cursor/mcp.json`，只想
-对单个项目生效则放在项目根目录的 `.cursor/mcp.json`。内容和上面 Claude
-Desktop 的 JSON 完全一样（同样是 `mcpServers.Spomory` 这个键决定 Cursor
-里显示的名字），改完重启 Cursor 生效。**已在真实 Cursor 环境里验证过**
-（2026-09-14）：`add_memory`/`search_memory`/`forget_memory` 等工具能正常
-被 Cursor 里的 Agent 调用。
-
-**图形化入口**：不用自己去翻文件系统找 `mcp.json`，Cursor 里
-**Customize → MCPs → "+ New MCP Server"** 会直接在编辑器右侧分栏打开
-`~/.cursor/mcp.json`，改完保存即可，效果跟手动编辑这个文件完全一样。
-
-**远程/云端版的 JSON 结构**（本地版是 `command`+`env`，见上面 Claude
-Desktop 的例子；远程版换成 `url`+`headers`）：
-
-```json
-{
-  "mcpServers": {
-    "spomory-cloud": {
-      "url": "https://memory.example.com/mcp-apikey/",
-      "headers": {
-        "x-api-key": "<上面 /users/register 拿到的 key>"
-      }
-    }
-  }
-}
-```
-
-（如果连的是 Spomory 官方托管的云端服务而不是自己部署的实例，真实的
-`url` 是 `https://api.yliuai.com/mcp-apikey/`，这个域名在
-`docs/privacy_policy_draft.md` 里已经公开过，不是内部信息。）**这个远程
-接入方式也已在真实 Cursor 环境里验证过**（2026-09-15）。
-
-### Codex CLI
-
-Codex CLI 的 MCP 配置是 TOML 格式，跟上面 Claude Desktop/Cursor 的 JSON
-结构不一样——默认路径 `~/.codex/config.toml`，也支持项目级配置
-`.codex/config.toml`（仅限受信任的项目）：
-
-```toml
-[mcp_servers.Spomory]
-command = "/绝对路径/memory-core-venv/bin/memory-core-mcp"
-
-[mcp_servers.Spomory.env]
-LLM_API_KEY = "你的 LLM API Key"
-LLM_BASE_URL = "https://api.deepseek.com"
-LLM_MODEL = "deepseek-v4-flash"
-```
-
-也可以用官方 CLI 命令添加，不用手动改文件：
-
-```bash
-codex mcp add Spomory \
-  --env LLM_API_KEY=你的Key --env LLM_BASE_URL=https://api.deepseek.com --env LLM_MODEL=deepseek-v4-flash \
-  -- /绝对路径/memory-core-venv/bin/memory-core-mcp
-```
-
-`codex mcp list` 可以确认注册成功。**已在真实 Codex CLI 环境里验证过**
-（2026-09-14）：工具调用行为和 Claude Desktop/Cursor 一致。
-
-**图形化界面配置**：Codex 客户端（桌面/IDE 版本）也提供了不用手改
-`config.toml` 的图形化添加入口：**Plugins → 右上角 Manage → MCPs →
-"+ Add server"**，进去之后是"Connect to a custom MCP"表单，Type 分两种，
-分别对应本地版和远程版 Spomory：
-
-- **STDIO**（本地版）：
-  - Name：`Spomory`
-  - Command to launch：`/绝对路径/memory-core-venv/bin/memory-core-mcp`
-    （跟上面 TOML 例子里的 `command` 是同一个值）
-  - Arguments：留空
-  - Environment variables：加三行，`LLM_API_KEY`/`LLM_BASE_URL`/
-    `LLM_MODEL`，值跟上面 TOML 例子一致
-  - Working directory：可留空
-
-- **Streamable HTTP**（远程/云端版，见下面"接入远程 Spomory"一节）：
-  - Name：`Spomory Cloud`
-  - URL：`https://memory.example.com/mcp-apikey`（换成实际部署的域名，
-    走的是 API Key 挂载点，不是 OAuth 挂载点——这个表单没有走完整
-    OAuth 授权流程的入口，只有"Bearer token"和普通请求头两种方式）
-  - Bearer token env var：留空不用——Spomory 远程服务的 API Key 挂载点
-    认的是 `x-api-key` 请求头，不是 `Authorization: Bearer`
-  - Headers from environment variables：加一行，Key 填 `x-api-key`，
-    Value 填一个本机环境变量名（比如 `SPOMORY_API_KEY`，需要提前在
-    系统里设置好这个环境变量，值是"接入远程 Spomory"一节里
-    `/users/register` 返回的那把 key）——用环境变量间接引用，不要把
-    key 明文填进 Headers 那个字段（那个是字面值，会明文存进 Codex 的
-    配置文件里）
-
-**这条路径（STDIO 和 Streamable HTTP 两种）已在真实 Codex 客户端里验证
-通过**（2026-09-15）：图形化表单填进去的配置能正常连上 Spomory（本地版
-和远程版都测过），工具调用行为跟前面 CLI/`config.toml` 方式一致。
-
-### 数据文件存放位置
+### 本地数据文件存放位置与加密
 
 本地 SQLite 数据文件（图谱数据 + 用量统计）默认存在 `~/.memory-core/`
 （`MEMORY_CORE_DATA_DIR` 环境变量可以改)——这也是特意选的一个不在
@@ -301,41 +185,21 @@ Documents/Desktop/Downloads 下的普通目录，同样是为了避开上面那�
 删除，确认新数据库没问题后可以自己删掉）——不会丢数据，也不需要手动做
 任何操作。
 
-**验证步骤**（照着做一遍，10 分钟内应该能跑通）：
+### 部署远程/云端 Server（给 HTTP 接入用）
 
-1. 打开 Claude Desktop，新建对话，确认输入框附近的 Connectors/MCP 工具
-   列表里能看到 `Spomory` 已连接（没连上通常是 `command` 路径写错，或者
-   环境变量里 `LLM_API_KEY` 没填）。
-2. 让 Claude 调用 `add_memory` 写入一句话，比如"请调用 Spomory 的
-   add_memory 工具，记住：我在某某公司做后端开发"。
-3. 开一个新对话（或者接着问），让 Claude 调用 `search_memory` 查"我在哪里
-   工作"，确认能检索到第 2 步写入的内容。
-4. 让 Claude 调用 `forget_memory`，比如"请调用 Spomory 的 forget_memory
-   工具，忘记我在某某公司做后端开发这件事"，然后重复第 3 步的查询，确认
-   已经查不到刚才那条记忆了。
-5. 如果想验证云端后端（Epic 8.2），把 `env` 里加一条 `DATABASE_URL`
-   指向 Postgres，重启 Claude Desktop，重复第 2-4 步，确认行为一致。
-
-**排查方法**：如果 Claude Desktop 提示 "Server disconnected"，真实的报错
-（不是那句笼统的断连提示）在 `~/Library/Logs/Claude/mcp-server-Spomory.log`
-里（文件名跟着 `mcpServers` 里的键名走，改了显示名字后日志文件名也会跟
-着变）——先看这个文件，上面那个 TCC 权限问题就是从这里诊断出来的。
-
-## 远程接入（API Key，Epic 11.5，可选）
-
-上面全部内容讲的是本地 stdio 版——免注册、数据留在自己电脑，继续是默认推荐的
-接入方式。如果你不想在自己电脑上装 Python 环境（比如想直接从手机/网页版
-Claude 连，或者要接入国内"魔搭 MCP 广场"这类只收远程 HTTPS 端点的平台），
+上面全部内容讲的是本地 stdio 版——免注册、数据留在自己电脑，继续是默认
+推荐的接入方式。如果你不想在自己电脑上装 Python 环境（比如想直接从
+手机/网页版连，或者要接入国内"魔搭 MCP 广场"这类只收远程 HTTPS 端点的
+平台，也包括下面豆包那种走图形化"自定义连接器"的客户端），
 `src/memory_core/mcp_server/remote.py` + `src/cloud_api/` 提供了第二种、走
 API Key 鉴权的远程接入方式，同样的六个工具，行为一致，区别只是：
 
 - 每个用户的记忆存在共享 Postgres 数据库里的一张按 `user_id` 隔离的图
   （`PostgresGraphStore(dsn, user_id)`），不是本地 SQLite 文件。
 - 鉴权靠 API Key（`x-api-key` 请求头），不是完整 OAuth——够用但达不到
-  Anthropic 官方 Connector 目录的准入要求（那边需要 OAuth 2.1 + PKCE），
-  这条线目标是魔搭/豆包这类只要求可访问 HTTPS 端点的平台。
-
-### 部署
+  Anthropic 官方 Connector 目录的准入要求（那边需要 OAuth 2.1 + PKCE，
+  见下面"部署 OAuth 2.1"一节），这条线目标是魔搭/豆包这类只要求可访问
+  HTTPS 端点的平台。
 
 ```bash
 uv pip install "memory-core[llm,embedding,mcp,cloud] @ git+https://github.com/yliuai/spomory.git"
@@ -353,7 +217,7 @@ memory-core-mcp-remote
 `host:*` 通配端口）：这是 MCP SDK 自带的 DNS-rebinding 防护，检查请求的
 `Host` 头，不在允许列表里直接返回 421——不设置的话不是"默认放行"，而是
 默认拒绝所有请求（宁可部署完连不上也不留一个隐性允许所有 Host 的后门），
-已经用一个假 Host 头的本地烟雾测试验证过这个行为（见下面"验证状态"）。
+已经用一个假 Host 头的本地烟雾测试验证过这个行为（见文档最后"验证状态"）。
 
 **`CORS_ALLOWED_ORIGINS` 是单独一层放行**，跟上面 `MCP_ALLOWED_HOSTS`/
 `MCP_ALLOWED_ORIGINS` 管的 MCP 传输层 Origin 校验是两回事——那一层校验
@@ -363,17 +227,19 @@ memory-core-mcp-remote
 `Access-Control-Allow-Origin`；不设置时行为跟之前完全一样（CORS 完全
 关闭），不会默认放开成 `*`。逗号分隔可以放多个来源。
 
-### 使用
+**如果连的是 Spomory 官方托管的云端服务而不是自己部署的实例**，真实的
+`url` 是 `https://api.yliuai.com/mcp-apikey/`，这个域名在
+`docs/privacy_policy_draft.md` 里已经公开过，不是内部信息——下面各客户端
+的 HTTP 小节里，把示例里的 `https://memory.example.com/mcp-apikey/` 换成
+这个即可。
+
+### 注册获取 API Key
 
 ```bash
 curl -X POST https://memory.example.com/users/register \
   -H "Content-Type: application/json" -d '{"email": "you@example.com"}'
 # 响应里的 api_key（mck_ 开头）只在这一次返回，记下来
 ```
-
-Claude Desktop/Cursor 里配一个远程 MCP 连接（具体 JSON 结构以客户端当前
-文档为准），`url` 填 `https://memory.example.com/mcp-apikey`，请求头带上
-`x-api-key: <上面拿到的 key>`。
 
 **同一个邮箱可以重复调用这个接口**：会解析到同一个账号（`user_id` 不变），
 但每次都会签发一把新 Key——弄丢了 Key 就再调一次拿新的，不需要单独的
@@ -385,7 +251,7 @@ Claude Desktop/Cursor 里配一个远程 MCP 连接（具体 JSON 结构以客�
 自己敲 curl 用自己的邮箱没问题，但**不要把这个接口直接接到公开网页表单
 上**。
 
-### 邮箱验证版注册（给公开网页表单用）
+**邮箱验证版注册（给公开网页表单用）**：
 
 ```bash
 curl -X POST https://memory.example.com/users/register/request \
@@ -415,16 +281,16 @@ Key），只是多了邮箱验证这一步。部署上需要设置 `RESEND_API_K
 `PUBLIC_BASE_URL` 可选，默认复用 `OAUTH_ISSUER_URL`（同一个域名的情况下
 不用单独设置）。
 
-### 不在这条线里的东西
+**这条线不包含的东西**：
 
 - Origin 请求头校验（Anthropic 官方 Connector 目录另一项要求，跟 OAuth
-  分开做，见下一节的范围说明）。
+  一起部署，见下一节）。
 - 把这台服务实际暴露到公网、域名/证书/防火墙——这些是你自己部署时要做的
   运营决定，这里只提供代码和本地验证。
 - 本地↔云端记忆双向同步——本地 stdio 版和这条远程版目前是两个独立的
   分发渠道，不共享数据。
 
-## OAuth 2.1 接入（对齐 Claude 官方 Connector 目录）
+### 部署 OAuth 2.1（对齐 Claude 官方 Connector 目录）
 
 上面的 API Key 接入方式够用于魔搭这类平台，但 Anthropic 官方 Connector
 目录硬性要求 OAuth 2.1 + PKCE，纯 API Key 会被拒。这是第三种、单独的接入
@@ -438,19 +304,16 @@ Key），只是多了邮箱验证这一步。部署上需要设置 `RESEND_API_K
 留给了对外展示的那一个；API Key 版的地址只会被手动粘贴进各个客户端自己
 的配置文件，不会被任何人在市场里搜索到，命名上没有这层外部约束。
 
-### 为什么不能挂在同一个端点上
+**为什么不能挂在同一个端点上**：`mcp` SDK 只要给 `MCPServer` 配了
+`auth_server_provider`，就会给这个挂载点的**所有**请求强制套一层
+`RequireAuthMiddleware`——没带合法的 `Authorization: Bearer` 直接 401，
+工具代码根本不会被调用到。也就是说一旦在同一个挂载点上开 OAuth，现有纯
+`x-api-key` 的客户端（Cursor、魔搭、`mcp-remote`）会全部失效。所以做法是
+另开一个独立挂载路径专门给走官方目录审核的客户端用。
 
-`mcp` SDK 只要给 `MCPServer` 配了 `auth_server_provider`，就会给这个挂载
-点的**所有**请求强制套一层 `RequireAuthMiddleware`——没带合法的
-`Authorization: Bearer` 直接 401，工具代码根本不会被调用到。也就是说
-一旦在同一个挂载点上开 OAuth，现有纯 `x-api-key` 的客户端（Cursor、魔搭、
-`mcp-remote`）会全部失效。所以做法是另开一个独立挂载路径专门给走官方
-目录审核的客户端用。
-
-### `/mcp` 只是 Connector URL（工具调用的端点），不是授权发生的地方
-
-**`/mcp` 是 MCP 客户端连接、实际调用 `add_memory`/`search_memory`
-这些工具时用的那个 URL**（对应 OAuth 术语里的"resource server"）。真正的
+**`/mcp` 只是 Connector URL（工具调用的端点），不是授权发生的地方**：
+`/mcp` 是 MCP 客户端连接、实际调用 `add_memory`/`search_memory`
+这些工具时用的那个 URL（对应 OAuth 术语里的"resource server"）。真正的
 授权流程——`/authorize`、`/token`、`/register`、`/.well-known/oauth-
 authorization-server` 这些端点——**在域名根路径下**，不是 `/mcp`
 底下（比如 `https://api.example.com/authorize`，不是
@@ -474,19 +337,15 @@ authorization-server` 这些端点——**在域名根路径下**，不是 `/mcp
 回归测试见 `tests/test_oauth_mount_routing.py`（含一个专门验证
 `/mcp-apikey` 和 `/mcp` 两个挂载点同时存在、互不干扰的用例）。
 
-### 登录方式：邮件 Magic Link
-
-OAuth 的 `/authorize` 需要一个真人证明身份的步骤，项目里没有密码系统，
-用的是邮件魔法链接：填邮箱 → 收一封带一次性链接的邮件 → 点开链接才真正
-生成 OAuth 授权码、跳回发起连接的客户端。发信走
+**登录方式：邮件 Magic Link**：OAuth 的 `/authorize` 需要一个真人证明身份
+的步骤，项目里没有密码系统，用的是邮件魔法链接：填邮箱 → 收一封带一次性
+链接的邮件 → 点开链接才真正生成 OAuth 授权码、跳回发起连接的客户端。发信走
 [Resend](https://resend.com)（不是自己用 VPS 走裸 SMTP——新服务器的出站
 IP 没有发信声誉，很容易被邮件服务商拉黑）。
 
-### 部署新增的环境变量
-
-在原有 `memory-core-mcp-remote` 的环境变量基础上加这几个（不设置
-`OAUTH_ISSUER_URL` 时 OAuth 挂载点整个不会启用，现有 API Key 部署不受
-影响）：
+**部署新增的环境变量**（在原有 `memory-core-mcp-remote` 的环境变量基础上
+加这几个，不设置 `OAUTH_ISSUER_URL` 时 OAuth 挂载点整个不会启用，现有
+API Key 部署不受影响）：
 
 ```bash
 export OAUTH_ISSUER_URL=https://api.example.com          # 必填，启用 OAuth 的开关
@@ -495,10 +354,8 @@ export RESEND_API_KEY=re_...    # 去 Resend 官网注册账号拿，域名验�
 export EMAIL_FROM="Spomory <noreply@example.com>"
 ```
 
-### Origin 请求头校验 + RFC 8707 资源（audience）校验
-
-这两项后来都补上了（`create_app`/`SpomoryOAuthProvider` 新增
-`allowed_origins`/`resource_url` 参数）：
+**Origin 请求头校验 + RFC 8707 资源（audience）校验**（`create_app`/
+`SpomoryOAuthProvider` 新增 `allowed_origins`/`resource_url` 参数）：
 
 - **Origin 校验**：查 Anthropic 官方"Testing your connector"文档才发现，
   这不是审核 checklist 里"必须实现"的一条，反而是故障排查里提醒
@@ -524,12 +381,238 @@ _configured_origin_and_rejects_others`）。测试过程中发现两个测试设
 的请求会被 `RequireAuthMiddleware` 先一步 401 掉，Origin 校验的 403 根本
 轮不到，测 Origin 必须先用 Provider 真实签发一个有效 token。
 
-### 不在这次范围内
+**这次范围不包含的东西**：
 
 - 实际去 Anthropic 开发者后台提交 Connector 审核——这是运营动作，等这次
   代码在真实部署上跑通一次真实 Claude Desktop 的浏览器授权流程之后再做。
 - 密码找回/账号设置这类更完整的用户账户体系——魔法链接够用于登录这一件
   事，没有做更大的账户体系。
+
+## Claude Desktop
+
+### STDIO（本地，默认推荐方式）
+
+免注册、数据留在自己电脑。先看上面通用章节的
+[macOS 权限坑](#macos-上的一个坑不要把本地运行时装在-documents-下)，
+避免装在 `~/Documents` 下踩坑。
+
+在 `claude_desktop_config.json`（macOS 路径：
+`~/Library/Application Support/Claude/claude_desktop_config.json`）里加
+一段。`mcpServers` 下面这个键（下例中的 `"Spomory"`）就是 Claude
+Desktop 界面上显示的名字，可以按自己喜好改，但**改了之后要连带把下面
+"验证步骤与排查方法"里提到的日志文件名一起换**，两者是绑定的。`command`
+写上面那个**非 Documents 路径**虚拟环境里 `memory-core-mcp` 的绝对路径
+——注意这个可执行文件名不用跟着显示名字改，它是包安装时固定生成的入口
+——Claude Desktop 启动子进程时也不一定继承你终端的 `PATH`，绝对路径最不
+容易出问题：
+
+```json
+{
+  "mcpServers": {
+    "Spomory": {
+      "command": "/Users/<you>/mcp-servers/memory-core-venv/bin/memory-core-mcp",
+      "env": {
+        "LLM_API_KEY": "...",
+        "LLM_BASE_URL": "https://api.deepseek.com",
+        "LLM_MODEL": "deepseek-v4-flash"
+      }
+    }
+  }
+}
+```
+
+如果这个 JSON 文件里已经有别的键（比如 Claude Desktop 自己的其他偏好
+设置），只在顶层加 `mcpServers` 这一个键，不要动其他内容——改之前建议
+先复制一份备份。改完配置后完全退出并重新打开 Claude Desktop 才会生效。
+
+### HTTP（远程/云端，API Key）
+
+不想在本机装 Python 环境的话，走这条线（部署方法、怎么拿 API Key 见上面
+通用章节）：
+
+```json
+{
+  "mcpServers": {
+    "spomory-cloud": {
+      "url": "https://memory.example.com/mcp-apikey/",
+      "headers": {
+        "x-api-key": "<注册获取 API Key 一节拿到的 key>"
+      }
+    }
+  }
+}
+```
+
+### OAuth 2.1（官方 Connector 目录）
+
+部署细节（为什么要单独挂载点、登录机制、Origin/RFC 8707 校验等）见上面
+通用章节的"部署 OAuth 2.1"。**诚实说明当前状态**：这条线是照着 Anthropic
+官方 Connector 目录的准入要求（OAuth 2.1 + PKCE）搭的，部署后完整走通过
+一次真实的"邮箱 magic link 登录 → 拿到 token → 调用 `add_memory`/
+`search_memory`"全流程，但**实测用的客户端是 MCP Inspector，不是 Claude
+Desktop 自己的连接器 UI**，也还没有实际提交到 Anthropic 开发者后台走
+Connector 审核、被官方目录收录。也就是说协议层面已经打通，但"在 Claude
+Desktop 设置里添加这个连接器、跳出浏览器走完授权"这个具体点击流程，还
+没有拿真实 Claude Desktop 客户端走过一遍——这个和上面 STDIO/HTTP 两节
+"已验证"的确定程度不一样，先如实标注。
+
+### 验证步骤与排查方法
+
+**验证步骤**（照着做一遍，10 分钟内应该能跑通）：
+
+1. 打开 Claude Desktop，新建对话，确认输入框附近的 Connectors/MCP 工具
+   列表里能看到 `Spomory` 已连接（没连上通常是 `command` 路径写错，或者
+   环境变量里 `LLM_API_KEY` 没填）。
+2. 让 Claude 调用 `add_memory` 写入一句话，比如"请调用 Spomory 的
+   add_memory 工具，记住：我在某某公司做后端开发"。
+3. 开一个新对话（或者接着问），让 Claude 调用 `search_memory` 查"我在哪里
+   工作"，确认能检索到第 2 步写入的内容。
+4. 让 Claude 调用 `forget_memory`，比如"请调用 Spomory 的 forget_memory
+   工具，忘记我在某某公司做后端开发这件事"，然后重复第 3 步的查询，确认
+   已经查不到刚才那条记忆了。
+5. 如果想验证云端后端（Epic 8.2），把 `env` 里加一条 `DATABASE_URL`
+   指向 Postgres，重启 Claude Desktop，重复第 2-4 步，确认行为一致。
+
+**排查方法**：如果 Claude Desktop 提示 "Server disconnected"，真实的报错
+（不是那句笼统的断连提示）在 `~/Library/Logs/Claude/mcp-server-Spomory.log`
+里（文件名跟着 `mcpServers` 里的键名走，改了显示名字后日志文件名也会跟
+着变）——先看这个文件，上面那个 macOS TCC 权限问题就是从这里诊断出来的。
+
+## Cursor
+
+### STDIO（本地，含图形化入口）
+
+Cursor 用同样结构的 MCP 配置文件：全局配置在 `~/.cursor/mcp.json`，只想
+对单个项目生效则放在项目根目录的 `.cursor/mcp.json`。内容和上面 Claude
+Desktop 的 JSON 完全一样（同样是 `mcpServers.Spomory` 这个键决定 Cursor
+里显示的名字），改完重启 Cursor 生效。**已在真实 Cursor 环境里验证过**
+（2026-09-14）：`add_memory`/`search_memory`/`forget_memory` 等工具能正常
+被 Cursor 里的 Agent 调用。
+
+**图形化入口**：不用自己去翻文件系统找 `mcp.json`，Cursor 里
+**Customize → MCPs → "+ New MCP Server"** 会直接在编辑器右侧分栏打开
+`~/.cursor/mcp.json`，改完保存即可，效果跟手动编辑这个文件完全一样。
+
+### HTTP（远程/云端，API Key）
+
+远程版是 `url`+`headers`（本地版是上面的 `command`+`env`）：
+
+```json
+{
+  "mcpServers": {
+    "spomory-cloud": {
+      "url": "https://memory.example.com/mcp-apikey/",
+      "headers": {
+        "x-api-key": "<上面 /users/register 拿到的 key>"
+      }
+    }
+  }
+}
+```
+
+**这个远程接入方式也已在真实 Cursor 环境里验证过**（2026-09-15）。
+
+## Codex CLI
+
+### STDIO（本地：CLI/TOML + 图形化）
+
+Codex CLI 的 MCP 配置是 TOML 格式，跟上面 Claude Desktop/Cursor 的 JSON
+结构不一样——默认路径 `~/.codex/config.toml`，也支持项目级配置
+`.codex/config.toml`（仅限受信任的项目）：
+
+```toml
+[mcp_servers.Spomory]
+command = "/绝对路径/memory-core-venv/bin/memory-core-mcp"
+
+[mcp_servers.Spomory.env]
+LLM_API_KEY = "你的 LLM API Key"
+LLM_BASE_URL = "https://api.deepseek.com"
+LLM_MODEL = "deepseek-v4-flash"
+```
+
+也可以用官方 CLI 命令添加，不用手动改文件：
+
+```bash
+codex mcp add Spomory \
+  --env LLM_API_KEY=你的Key --env LLM_BASE_URL=https://api.deepseek.com --env LLM_MODEL=deepseek-v4-flash \
+  -- /绝对路径/memory-core-venv/bin/memory-core-mcp
+```
+
+`codex mcp list` 可以确认注册成功。**已在真实 Codex CLI 环境里验证过**
+（2026-09-14）：工具调用行为和 Claude Desktop/Cursor 一致。
+
+**图形化界面配置**：Codex 客户端（桌面/IDE 版本）也提供了不用手改
+`config.toml` 的图形化添加入口：**Plugins → 右上角 Manage → MCPs →
+"+ Add server"**，进去之后是"Connect to a custom MCP"表单，Type 选
+**STDIO**：
+
+- Name：`Spomory`
+- Command to launch：`/绝对路径/memory-core-venv/bin/memory-core-mcp`
+  （跟上面 TOML 例子里的 `command` 是同一个值）
+- Arguments：留空
+- Environment variables：加三行，`LLM_API_KEY`/`LLM_BASE_URL`/
+  `LLM_MODEL`，值跟上面 TOML 例子一致
+- Working directory：可留空
+
+**这条路径（CLI/TOML 和图形化 STDIO 表单）已在真实 Codex 客户端里验证
+通过**（2026-09-15）：图形化表单填进去的配置能正常连上本地 Spomory，
+工具调用行为跟前面 CLI/`config.toml` 方式一致。
+
+### HTTP（远程/云端，图形化）
+
+同一个"Connect to a custom MCP"表单，Type 选 **Streamable HTTP**：
+
+- Name：`Spomory Cloud`
+- URL：`https://memory.example.com/mcp-apikey`（换成实际部署的域名，
+  走的是 API Key 挂载点，不是 OAuth 挂载点——这个表单没有走完整
+  OAuth 授权流程的入口，只有"Bearer token"和普通请求头两种方式）
+- Bearer token env var：留空不用——Spomory 远程服务的 API Key 挂载点
+  认的是 `x-api-key` 请求头，不是 `Authorization: Bearer`
+- Headers from environment variables：加一行，Key 填 `x-api-key`，
+  Value 填一个本机环境变量名（比如 `SPOMORY_API_KEY`，需要提前在
+  系统里设置好这个环境变量，值是上面"注册获取 API Key"一节里拿到的
+  那把 key）——用环境变量间接引用，不要把 key 明文填进 Headers 那个
+  字段（那个是字面值，会明文存进 Codex 的配置文件里）
+
+**这条路径（Streamable HTTP 图形化表单）已在真实 Codex 客户端里验证
+通过**（2026-09-15）：连上了远程版 Spomory，工具调用行为跟本地版一致。
+
+## 豆包（Doubao）
+
+有些客户端（豆包就是一个）根本没有 JSON 配置文件，而是一个点点点的
+"自定义连接器"表单，传输类型是个下拉框。豆包里的路径：**技能・连接器・
+伙伴 → 新建（+）→ 新建自定义连接器**，根据传输类型选下面两种填法之一。
+
+### STDIO（本地）
+
+先看上面通用章节的
+[macOS 权限坑](#macos-上的一个坑不要把本地运行时装在-documents-下)。
+
+- **服务器名称**：随便起，比如 `Spomory`
+- **传输类型**：**STDIO**
+- **命令**：`spomory-mcp` 的绝对路径（和前面 Claude Desktop 配置里的
+  `command` 是同一个值，用 `which spomory-mcp` 查）
+- **参数**：留空
+- **环境变量**：加几行 `LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`——值
+  和本文档前面的配置 JSON 示例一样
+
+### HTTP（远程/云端，API Key）
+
+- **服务器名称**：随便起，比如 `Spomory`
+- **传输类型**：**HTTP**
+- **服务器 URL**：`https://memory.example.com/mcp-apikey/`（换成你自己
+  部署的域名——注意结尾的斜杠，豆包这个表单不会像某些客户端那样自动补上）
+- **自定义 Headers**：加一行，名称填 `x-api-key`，值填上面"注册获取
+  API Key"一节拿到的 Key
+
+不管哪种，保存之后这六个工具就能像在 Claude Desktop/Cursor/Codex 里一样
+被调用。**两种填法都已用真实豆包客户端验证过**（2026-09-28）：照着表单
+填完保存，在豆包对话里成功调用了 `add_memory`。
+
+其他走同样形态的客户端——远程走"URL + 自定义 Header"表单，本地走
+"命令 + 参数 + 环境变量"表单（Coze、ModelScope 或类似的）——理论上也是
+同样的接法，这正是 Spomory 本地/远程两种部署方式当初设计要覆盖的通用
+场景。
 
 ## 验证状态
 
@@ -584,9 +667,9 @@ _configured_origin_and_rejects_others`）。测试过程中发现两个测试设
     Postgres 上跑通，公网 `POST /users/register` 和 `POST /mcp/`（真实
     `initialize` 握手）都用真实域名验证过，不是回环测试。部署过程中还
     真实踩到并修复了 Cloudflare "Automatic SSL/TLS" 模式探测源站 443
-    导致连接悬挂超时的问题（改成 Flexible 模式解决）。还没做：拿真实
-    Claude Desktop/Cursor 客户端连（只用 curl 模拟过 MCP 协议），提交到
-    魔搭 MCP 广场。
+    导致连接悬挂超时的问题（改成 Flexible 模式解决）。提交到魔搭 MCP
+    广场这一步还没做；Claude Desktop/Cursor/Codex CLI/豆包 这几个真实
+    客户端已经分别连上验证过，见上面各自的章节。
 
 - **OAuth 2.1 接入——诚实的验证状态**：`SpomoryOAuthProvider` 的全部
   Protocol 方法（客户端注册、`authorize`→pending 记录、授权码签发与
@@ -625,13 +708,15 @@ _configured_origin_and_rejects_others`）。测试过程中发现两个测试设
   （真实 Claude Desktop 走系统级深链接，不会有这个问题），绕过方法是把
   链接粘贴回原来的标签页而不是直接点开。用这个方法真实连上后，
   `add_memory`/`search_memory` 都调用成功，写入的数据在生产 Postgres 里
-  核实过确实落在了正确的 `user_id` 下，验证完清理了测试数据。
+  核实过确实落在了正确的 `user_id` 下，验证完清理了测试数据。**这次走通
+  用的客户端是 MCP Inspector**，还没有拿真实 Claude Desktop 客户端本身的
+  连接器 UI 走过一遍，见上面"Claude Desktop → OAuth 2.1"一节的说明。
 
   **2026-09-06 追加：Origin 请求头校验 + RFC 8707 audience 校验也补上并
-  部署验证过了。** 详见上面"Origin 请求头校验 + RFC 8707 资源（audience）
-  校验"一节；生产环境额外做了一次 SQLite schema 迁移（`oauth_access_tokens`/
-  `oauth_refresh_tokens` 表补 `resource` 列，迁移前备份了原文件），迁移和
-  部署后用 `test_oauth_store.py`/`test_oauth_login_flow.py`/
+  部署验证过了。** 详见上面"部署 OAuth 2.1"一节；生产环境额外做了一次
+  SQLite schema 迁移（`oauth_access_tokens`/`oauth_refresh_tokens` 表补
+  `resource` 列，迁移前备份了原文件），迁移和部署后用
+  `test_oauth_store.py`/`test_oauth_login_flow.py`/
   `test_oauth_mount_routing.py`/`test_remote_oauth_context.py`/
   `test_remote_mcp_server.py` 一起对着生产 Postgres 重新跑通过（27 个用例
   全过），本地全量测试（116 passed, 17 skipped）和 `ruff check` 也全过。

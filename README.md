@@ -4,17 +4,23 @@
 
 **English | [中文](README.zh-CN.md)**
 
-Spomory gives Claude Desktop, Cursor, and Codex CLI a memory that
-persists across sessions — and is shared between all three. Tell one of
-them something once (a project detail, a preference, a fact about
-yourself) and any of them can recall it later, without you repeating
-yourself.
+Spomory gives Claude Desktop, Cursor, Codex CLI, and Doubao (豆包) a
+memory that persists across sessions — and is shared between all of
+them. Tell one of them something once (a project detail, a preference, a
+fact about yourself) and any of them can recall it later, without you
+repeating yourself.
 
 It runs as an [MCP](https://modelcontextprotocol.io/) server, either
 locally on your own machine (free, nothing leaves your computer) or as a
-hosted cloud service (free signup, memory follows you across devices).
-The rest of this README covers the local path; for the cloud path see
+hosted cloud service (free signup, memory follows you across devices) —
+every client above supports both. The rest of this README walks through
+the local path (that's what "Get started" below covers); the fastest way
+into the cloud path is the web app at
 [spomory.yliuai.com/get-started/remote](https://spomory.yliuai.com/get-started/remote).
+Exact local/cloud configuration for each individual client lives in
+[`docs/mcp_quickstart.en.md`](docs/mcp_quickstart.en.md) (organized one
+section per client — Claude Desktop/Cursor/Codex CLI/Doubao — each
+covering both connection methods).
 
 Curious what it looks like before installing anything? There's a
 no-signup demo at [spomory.yliuai.com](https://spomory.yliuai.com) —
@@ -47,6 +53,13 @@ client, and a real gotcha we hit (macOS blocking a venv that lives under
 `~/Documents`) are in
 [`docs/mcp_quickstart.en.md`](docs/mcp_quickstart.en.md).
 
+Clients without a config file — Doubao (豆包), Coze, ModelScope — connect
+instead through a point-and-click "custom connector" form (URL + headers,
+or command + args + env for a local process); see the
+[Doubao](docs/mcp_quickstart.en.md#doubao-豆包) section in the same doc
+(each client — Claude Desktop, Cursor, Codex CLI, Doubao — now has its own
+section there, with STDIO/HTTP/OAuth grouped underneath it).
+
 > The one thing that trips people up: the config needs the **absolute
 > path** to `spomory-mcp` (run `which spomory-mcp` to find it) — the
 > client doesn't necessarily launch it with your shell's `PATH` set.
@@ -78,7 +91,7 @@ Once connected, six tools become available inside the client:
 | `export_memory` | Exports everything you've stored, as JSON — your data, portable |
 
 All six are verified working end-to-end against real Claude Desktop,
-Cursor, and Codex CLI sessions, both local and remote — see
+Cursor, Codex CLI, and Doubao sessions, both local and remote — see
 [`docs/mcp_quickstart.en.md`](docs/mcp_quickstart.en.md) for what
 "verified" means for each client.
 
@@ -310,7 +323,7 @@ env vars (`LLM_API_KEY`, etc.) or an already-downloaded model cache.
 
 | Doc | Content |
 |---|---|
-| [mcp_quickstart.en.md](docs/mcp_quickstart.en.md) ([中文](docs/mcp_quickstart.md)) | MCP Server install, configuration, connecting Claude Desktop/Cursor/Codex CLI, real-world gotchas |
+| [mcp_quickstart.en.md](docs/mcp_quickstart.en.md) ([中文](docs/mcp_quickstart.md)) | MCP Server install, configuration, connecting Claude Desktop/Cursor/Codex CLI/Doubao, real-world gotchas |
 | [graph_store_interface.en.md](docs/graph_store_interface.en.md) ([中文](docs/graph_store_interface.md)) | Storage adapter interface design |
 | [export_format.en.md](docs/export_format.en.md) ([中文](docs/export_format.md)) | The "memory passport" export format |
 | [dataset_format.en.md](docs/dataset_format.en.md) ([中文](docs/dataset_format.md)) | GRPO training data format and how the real dataset was generated |

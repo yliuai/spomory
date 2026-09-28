@@ -3,8 +3,8 @@
 **English | [中文](mcp_quickstart.md)**
 
 Covers TASKS.md Epic 6.2-6.4 (internal task tracker, not part of this
-repo). This MCP server shows up in Claude Desktop / Cursor / Codex CLI as
-**Spomory** (`src/memory_core/mcp_server/server.py`'s `MCPServer("Spomory")`), and
+repo). This MCP server shows up in Claude Desktop / Cursor / Codex CLI /
+Doubao as **Spomory** (`src/memory_core/mcp_server/server.py`'s `MCPServer("Spomory")`), and
 exposes six tools: `add_memory`, `search_memory`, `get_graph`,
 `export_memory`, `forget_memory` (finds the single best-matching memory
 for a query and physically deletes it — the first user-facing trigger
@@ -18,13 +18,13 @@ bulk counterpart to `forget_memory`). It defaults to a local
 > `spomory` instead, with two identical CLI commands, `memory-core-mcp`
 > and `spomory-mcp` (same entry point, either name works). Only the
 > **name registered with the client** needs to be exactly `Spomory` for
-> Claude Desktop/Cursor/Codex CLI to display it that way; the two are
-> independent: the `command` field points at whichever executable
-> actually runs the code, while the key in the `mcpServers` JSON object is
-> what shows up in the Claude Desktop/Cursor UI and names the log file
-> (`mcp-server-<key>.log`). If you rename it, change both places, or the
-> log filename and the displayed name will stop matching, which makes
-> debugging confusing.
+> Claude Desktop/Cursor/Codex CLI/Doubao to display it that way; the two
+> are independent: the `command` field points at whichever executable
+> actually runs the code, while the key in the `mcpServers` JSON object
+> (or the "server name" field in a GUI form) is what shows up in the
+> client UI and names the log file (`mcp-server-<key>.log`). If you
+> rename it, change both places, or the log filename and the displayed
+> name will stop matching, which makes debugging confusing.
 
 ## Tools
 
@@ -37,7 +37,14 @@ bulk counterpart to `forget_memory`). It defaults to a local
 | `get_graph` | `entity_name`, `hops=1` | Returns the subgraph around an entity within the given number of hops, as JSON (`entities` + `relations`) |
 | `export_memory` | `subject_id="default"` | Exports the entire memory graph as a JSON "memory passport" — the data-ownership guarantee this server is built around |
 
-## Install
+## Install & configure (common to every client)
+
+Everything in this section applies no matter which client you connect
+with below — install once, configure the LLM once, deploy the remote
+server once if you want the HTTP path. Each client's own section further
+down only covers how that specific client's config UI/file is filled in.
+
+### Install
 
 ```bash
 # simplest — the published package, nothing to clone
@@ -53,7 +60,7 @@ instead of a package manager. It's a stdio server, so run it with
 `docker run -i`; state persists under `/data` if you mount a volume
 there.
 
-## Configure
+### LLM / embedding configuration
 
 Set the following environment variables (defaults to OpenAI; for a
 Chinese-market OpenAI-compatible API, just swap `LLM_BASE_URL`/`LLM_MODEL`):
@@ -65,7 +72,7 @@ export LLM_MODEL=deepseek-v4-flash             # optional, defaults to gpt-4o-mi
 export EMBEDDING_MODEL=BAAI/bge-m3             # optional, defaults to bge-m3
 ```
 
-### Running fully local (no cloud LLM calls at all)
+#### Running fully local (no cloud LLM calls at all)
 
 By default, embedding already runs locally (the `sentence-transformers`
 model above), and only the LLM extraction/generation call goes to
@@ -132,20 +139,21 @@ identical behavior, verified by `tests/test_postgres_mcp_parity.py`:
 export DATABASE_URL=postgresql://user:pass@host:5432/dbname   # optional
 ```
 
-## Run
+### Run the local server
 
 ```bash
 memory-core-mcp
 ```
 
-## Connecting Claude Desktop / Cursor / Codex CLI
+### A macOS gotcha: don't install the local runtime under `~/Documents`
 
-### ⚠️ On macOS, don't install the runtime under `~/Documents` (or Desktop/Downloads)
+This applies to **any** client connecting over STDIO by spawning Spomory
+as a local subprocess (Claude Desktop, Cursor, Codex CLI, Doubao's STDIO
+mode, ...) — each client section below links back to it.
 
 **A real gotcha we actually hit**: if `command` points at
-`~/Documents/<project>/.venv/...`, Claude Desktop's MCP Server subprocess
-fails with `Server disconnected`, and the log
-(`~/Library/Logs/Claude/mcp-server-<name>.log`) shows:
+`~/Documents/<project>/.venv/...`, the client's MCP Server subprocess
+fails with `Server disconnected`, and the log shows:
 
 ```
 Fatal Python error: init_import_site: Failed to import the site module
@@ -156,7 +164,7 @@ PermissionError: [Errno 1] Operation not permitted: '.../.venv/pyvenv.cfg'
 The root cause is macOS's TCC (privacy protection) mechanism:
 `~/Documents`, `~/Desktop`, and `~/Downloads` are protected by default
 against apps (and their subprocesses) that haven't been explicitly
-granted "Full Disk Access." The MCP Server process Claude Desktop spawns
+granted "Full Disk Access." The MCP Server process the client spawns
 doesn't have that grant, so even Python reading its own venv's
 `pyvenv.cfg` at startup gets denied — **this has nothing to do with the
 code itself or where the repo lives; it's purely an OS-level restriction
@@ -175,151 +183,12 @@ uv pip install "/path/to/memory-core[llm,embedding,mcp]" \
 ```
 
 The repo itself (for source development) can live anywhere — only this
-**dedicated runtime copy for Claude Desktop** needs to be outside
-`~/Documents`. Whenever you change the code and want Claude Desktop to
-pick up the latest version, just re-run the same `uv pip install` command
-above (without `-e`) to reinstall over it.
+**dedicated runtime copy** needs to be outside `~/Documents`. Whenever you
+change the code and want your client to pick up the latest version, just
+re-run the same `uv pip install` command above (without `-e`) to
+reinstall over it.
 
-### Configuration
-
-Add a block to `claude_desktop_config.json` (macOS path:
-`~/Library/Application Support/Claude/claude_desktop_config.json`). The
-key under `mcpServers` (`"Spomory"` in the example below) is what shows
-up in the Claude Desktop UI — feel free to rename it to your liking, but
-**if you do, also update the log filename referenced in
-"Troubleshooting" below**, since the two are tied together. Set `command`
-to the absolute path of `memory-core-mcp` inside that **non-Documents**
-virtual environment — note that the executable's name doesn't need to
-match the display name; it's a fixed entry point generated when the
-package is installed. Claude Desktop's subprocess doesn't necessarily
-inherit your terminal's `PATH`, so an absolute path is the safest bet:
-
-```json
-{
-  "mcpServers": {
-    "Spomory": {
-      "command": "/Users/<you>/mcp-servers/memory-core-venv/bin/memory-core-mcp",
-      "env": {
-        "LLM_API_KEY": "...",
-        "LLM_BASE_URL": "https://api.deepseek.com",
-        "LLM_MODEL": "deepseek-v4-flash"
-      }
-    }
-  }
-}
-```
-
-If this JSON file already has other keys (e.g. Claude Desktop's own other
-preferences), only add the top-level `mcpServers` key — don't touch
-anything else, and back up the file before editing. Fully quit and reopen
-Claude Desktop for the config change to take effect.
-
-### Cursor
-
-Cursor uses an MCP config file with the same shape: globally at
-`~/.cursor/mcp.json`, or per-project at `.cursor/mcp.json` in the project
-root. The content is identical to the Claude Desktop JSON above (the same
-`mcpServers.Spomory` key determines what Cursor displays); restart Cursor
-after editing. **Verified against a real Cursor installation**
-(2026-09-14): `add_memory`/`search_memory`/`forget_memory` and the rest of
-the tools call correctly from Cursor's agent.
-
-**GUI entry point**: instead of hunting the filesystem for `mcp.json`,
-Cursor's **Customize → MCPs → "+ New MCP Server"** opens
-`~/.cursor/mcp.json` directly in a split editor pane — save it and it
-behaves exactly like editing the file by hand.
-
-**JSON shape for the remote/cloud version** (the local version uses
-`command`+`env`, as in the Claude Desktop example above; the remote
-version uses `url`+`headers` instead):
-
-```json
-{
-  "mcpServers": {
-    "spomory-cloud": {
-      "url": "https://memory.example.com/mcp-apikey/",
-      "headers": {
-        "x-api-key": "<the key from /users/register above>"
-      }
-    }
-  }
-}
-```
-
-(If you're connecting to Spomory's own officially hosted service rather
-than a self-deployed instance, the real `url` is
-`https://api.yliuai.com/mcp-apikey/` — that domain is already public,
-referenced in `docs/privacy_policy_draft.en.md`, not internal
-information.) **This remote connection path has also been verified
-against a real Cursor installation** (2026-09-15).
-
-### Codex CLI
-
-Codex CLI's MCP config is TOML, not the JSON shape Claude Desktop/Cursor
-use — default path `~/.codex/config.toml`, with per-project config also
-supported at `.codex/config.toml` (trusted projects only):
-
-```toml
-[mcp_servers.Spomory]
-command = "/absolute/path/to/memory-core-venv/bin/memory-core-mcp"
-
-[mcp_servers.Spomory.env]
-LLM_API_KEY = "your LLM API key"
-LLM_BASE_URL = "https://api.deepseek.com"
-LLM_MODEL = "deepseek-v4-flash"
-```
-
-Or add it with the official CLI command instead of editing the file by hand:
-
-```bash
-codex mcp add Spomory \
-  --env LLM_API_KEY=your-key --env LLM_BASE_URL=https://api.deepseek.com --env LLM_MODEL=deepseek-v4-flash \
-  -- /absolute/path/to/memory-core-venv/bin/memory-core-mcp
-```
-
-`codex mcp list` confirms it registered. **Verified against a real Codex
-CLI installation** (2026-09-14): tool-call behavior matches Claude
-Desktop/Cursor.
-
-**GUI configuration**: the Codex client (desktop/IDE builds) also has a
-point-and-click way to add a server without hand-editing `config.toml`:
-**Plugins → Manage (top right) → MCPs → "+ Add server"**, which opens a
-"Connect to a custom MCP" form with two connection types, matching
-Spomory's local and remote deployments respectively:
-
-- **STDIO** (local Spomory):
-  - Name: `Spomory`
-  - Command to launch: `/absolute/path/to/memory-core-venv/bin/memory-core-mcp`
-    (same value as `command` in the TOML example above)
-  - Arguments: leave blank
-  - Environment variables: add three rows — `LLM_API_KEY`, `LLM_BASE_URL`,
-    `LLM_MODEL` — same values as the TOML example
-  - Working directory: can be left blank
-
-- **Streamable HTTP** (remote/cloud Spomory, see "Connecting to a remote
-  Spomory" below):
-  - Name: `Spomory Cloud`
-  - URL: `https://memory.example.com/mcp-apikey` (swap in your real
-    deployment's domain — this is the API-key mount, not the OAuth one:
-    this form has no full OAuth-authorization-flow entry point, only a
-    "Bearer token" field and plain headers)
-  - Bearer token env var: leave blank — Spomory's remote API-key mount
-    expects an `x-api-key` header, not `Authorization: Bearer`
-  - Headers from environment variables: add one row, Key = `x-api-key`,
-    Value = the name of a local environment variable (e.g.
-    `SPOMORY_API_KEY`) that you've already set to the key returned by
-    `/users/register` in "Connecting to a remote Spomory" below — reference
-    it indirectly via an env var; don't paste the raw key into the plain
-    "Headers" field (that one stores the literal value straight into
-    Codex's config file).
-
-**Both connection types (STDIO and Streamable HTTP) on this path have been
-verified against a real Codex client** (2026-09-15): the GUI-entered
-configuration connects to Spomory correctly (tested against both the
-local and remote deployments), with tool-call behavior matching the
-CLI/`config.toml` approach above.
-
-### Where data lives
+### Where local data lives, and encryption
 
 Local SQLite data files (graph data + usage stats) live in
 `~/.memory-core/` by default (override with `MEMORY_CORE_DATA_DIR`) —
@@ -342,51 +211,25 @@ to `memory_core.sqlite3.pre-encryption-backup` first (not deleted
 automatically; safe to remove once you've confirmed the new database
 looks right). No data loss, no manual steps required.
 
-**Verification steps** (walk through these; should take under 10 minutes):
-
-1. Open Claude Desktop, start a new conversation, and confirm the
-   Connectors/MCP tools list near the input box shows `Spomory` connected
-   (if it's not connected, the usual cause is a wrong `command` path, or
-   a missing `LLM_API_KEY` in the env vars).
-2. Have Claude call `add_memory` to write something, e.g. "Please call
-   Spomory's add_memory tool to remember: I work as a backend engineer at
-   Some Company."
-3. Start a new conversation (or continue the same one) and have Claude
-   call `search_memory` to ask "Where do I work?", confirming it retrieves
-   what was written in step 2.
-4. Have Claude call `forget_memory`, e.g. "Please call Spomory's
-   forget_memory tool to forget that I work as a backend engineer at Some
-   Company," then repeat step 3's query and confirm that memory is gone.
-5. To verify the cloud backend (Epic 8.2), add `DATABASE_URL` to `env`,
-   restart Claude Desktop, and repeat steps 2-4 to confirm identical
-   behavior.
-
-**Troubleshooting**: if Claude Desktop shows "Server disconnected," the
-actual error (not that generic message) is in
-`~/Library/Logs/Claude/mcp-server-Spomory.log` (the filename follows
-whatever key you used under `mcpServers`, so it changes if you rename the
-display name) — check this file first; that's exactly how the TCC
-permission issue above was diagnosed.
-
-## Remote access (API key, Epic 11.5, optional)
+### Deploying the remote/cloud server (for the HTTP path)
 
 Everything above is the local stdio server — no registration needed, data
-stays on your machine, still the default recommended way to connect. If you
-don't want to run a Python environment locally at all (e.g. connecting from
-Claude's web app, or getting listed on a marketplace like China's ModelScope
-MCP directory that only accepts a reachable HTTPS endpoint),
-`src/memory_core/mcp_server/remote.py` + `src/cloud_api/` provide a second,
-API-key-authenticated remote path. Same six tools, same behavior; the
-differences are:
+stays on your machine, still the default recommended way to connect. If
+you don't want to run a Python environment locally at all (e.g.
+connecting from a web app, or getting listed on a marketplace like
+China's ModelScope MCP directory that only accepts a reachable HTTPS
+endpoint — also Doubao's GUI "custom connector" client below),
+`src/memory_core/mcp_server/remote.py` + `src/cloud_api/` provide a
+second, API-key-authenticated remote path. Same six tools, same
+behavior; the differences are:
 
 - Each user's memories live in a shared Postgres database, isolated per
   `user_id` (`PostgresGraphStore(dsn, user_id)`), not a local SQLite file.
 - Authentication is an API key (`x-api-key` header), not full OAuth — enough
   for a platform like ModelScope/Doubao/Coze that just requires a reachable
   HTTPS endpoint, but not enough to meet Anthropic's official Connector
-  Directory requirements (OAuth 2.1 + PKCE).
-
-### Deploy
+  Directory requirements (OAuth 2.1 + PKCE, see "Deploying OAuth 2.1"
+  below).
 
 ```bash
 uv pip install "memory-core[llm,embedding,mcp,cloud] @ git+https://github.com/yliuai/spomory.git"
@@ -407,7 +250,7 @@ MCP SDK's built-in DNS-rebinding protection, which checks the request's
 unset doesn't mean "allow everything" — it means every request is rejected
 by default (fail closed rather than leave an implicit allow-all-hosts back
 door); this was verified with a local smoke test using a fake `Host` header
-(see "Verification status" below).
+(see "Verification status" at the end of this doc).
 
 **`CORS_ALLOWED_ORIGINS` is a separate layer** from `MCP_ALLOWED_HOSTS`/
 `MCP_ALLOWED_ORIGINS` above, which govern the MCP transport's own Origin
@@ -419,17 +262,20 @@ for plain HTTP routes like `/users/register`; leaving it unset keeps CORS
 fully off (unchanged from before this parameter existed), it never
 defaults open to `*`. Comma-separated for multiple origins.
 
-### Use it
+**If you're connecting to Spomory's own officially hosted service**
+rather than a self-deployed instance, the real `url` is
+`https://api.yliuai.com/mcp-apikey/` — that domain is already public,
+referenced in `docs/privacy_policy_draft.en.md`, not internal
+information. Swap it in wherever a client section below shows the
+placeholder `https://memory.example.com/mcp-apikey/`.
+
+### Getting an API key
 
 ```bash
 curl -X POST https://memory.example.com/users/register \
   -H "Content-Type: application/json" -d '{"email": "you@example.com"}'
 # the api_key in the response (starts with mck_) is only ever shown once -- save it
 ```
-
-Configure a remote MCP connection in Claude Desktop/Cursor (exact JSON shape
-per that client's current docs): `url` is `https://memory.example.com/mcp-apikey`,
-with an `x-api-key: <the key from above>` header.
 
 **Calling this endpoint again with the same email is safe** — it resolves
 to the same account (`user_id` stays the same) and issues a fresh key each
@@ -445,7 +291,7 @@ stop someone deliberately targeting one specific email. Fine for curling
 with your own email, but **don't wire this one directly into a public web
 form**.
 
-### Email-verified registration (for a public web form)
+**Email-verified registration (for a public web form)**:
 
 ```bash
 curl -X POST https://memory.example.com/users/register/request \
@@ -481,11 +327,10 @@ don't need the OAuth flow turned on to use this pair); `PUBLIC_BASE_URL`
 is optional and defaults to `OAUTH_ISSUER_URL` when that's already set to
 the same host.
 
-### Not part of this path
+**Not part of this path**:
 
 - Origin header validation (another Anthropic Connector Directory
-  requirement, handled separately from OAuth — see the next section for
-  what's in scope there).
+  requirement, deployed together with OAuth — see the next section).
 - Actually exposing this to the public internet — domain, TLS, firewall —
   those are deployment decisions you make; this only provides the code and
   local verification.
@@ -493,7 +338,7 @@ the same host.
   this remote server are currently two independent distribution channels
   that don't share data.
 
-## OAuth 2.1 (for Anthropic's official Connector Directory)
+### Deploying OAuth 2.1 (for Anthropic's official Connector Directory)
 
 The API-key path above is enough for ModelScope-style platforms, but
 Anthropic's official Connector Directory requires OAuth 2.1 + PKCE and
@@ -518,14 +363,13 @@ Turning OAuth on for the same mount as the API-key path would break every
 existing `x-api-key`-only client (Cursor, ModelScope, `mcp-remote`), so
 OAuth gets its own mount instead.
 
-### `/mcp` is only the Connector URL (where tools get called) — not where authorization happens
-
-**`/mcp` is the URL an MCP client connects to and actually calls
-`add_memory`/`search_memory` on** (the OAuth "resource server"). The
-authorization flow itself — `/authorize`, `/token`, `/register`,
-`/.well-known/oauth-authorization-server` — lives **at the domain root**,
-not under `/mcp` (e.g. `https://api.example.com/authorize`, not
-`https://api.example.com/mcp/authorize`).
+**`/mcp` is only the Connector URL (where tools get called) — not where
+authorization happens**: `/mcp` is the URL an MCP client connects to and
+actually calls `add_memory`/`search_memory` on (the OAuth "resource
+server"). The authorization flow itself — `/authorize`, `/token`,
+`/register`, `/.well-known/oauth-authorization-server` — lives **at the
+domain root**, not under `/mcp` (e.g. `https://api.example.com/authorize`,
+not `https://api.example.com/mcp/authorize`).
 
 This isn't arbitrary: the `mcp` SDK builds those URLs by concatenating a
 fixed path onto `issuer_url` as a plain string
@@ -567,10 +411,9 @@ export RESEND_API_KEY=re_...    # from a Resend account you register — domain 
 export EMAIL_FROM="Spomory <noreply@example.com>"
 ```
 
-### Origin header validation + RFC 8707 resource (audience) validation
-
-Both of these got added later (`create_app`/`SpomoryOAuthProvider` gained
-`allowed_origins`/`resource_url` parameters):
+**Origin header validation + RFC 8707 resource (audience) validation**
+(`create_app`/`SpomoryOAuthProvider` gained `allowed_origins`/
+`resource_url` parameters):
 
 - **Origin validation**: reading Anthropic's own "Testing your connector"
   docs turned up that this isn't actually a "must implement" item on the
@@ -605,11 +448,266 @@ without a real valid Bearer token gets 401'd by `RequireAuthMiddleware`
 before Origin validation is ever reached, so testing Origin rejection
 requires minting a genuinely valid token via the real provider flow first.
 
-**Not part of this path yet**: actually
+**Not part of this scope yet**: actually
 submitting to Anthropic's developer portal for Connector review (an
 operational step, for once this has run through a real Claude Desktop
 browser authorization flow on the live deployment); password
 reset/full account management — a magic link is enough for login alone.
+
+## Claude Desktop
+
+### STDIO (local, the default recommended way)
+
+No registration, data stays on your machine. See the
+[macOS gotcha](#a-macos-gotcha-dont-install-the-local-runtime-under-documents)
+above first, to avoid installing under `~/Documents`.
+
+Add a block to `claude_desktop_config.json` (macOS path:
+`~/Library/Application Support/Claude/claude_desktop_config.json`). The
+key under `mcpServers` (`"Spomory"` in the example below) is what shows
+up in the Claude Desktop UI — feel free to rename it to your liking, but
+**if you do, also update the log filename referenced in "Verification
+steps and troubleshooting" below**, since the two are tied together. Set
+`command` to the absolute path of `memory-core-mcp` inside that
+**non-Documents** virtual environment — note that the executable's name
+doesn't need to match the display name; it's a fixed entry point
+generated when the package is installed. Claude Desktop's subprocess
+doesn't necessarily inherit your terminal's `PATH`, so an absolute path
+is the safest bet:
+
+```json
+{
+  "mcpServers": {
+    "Spomory": {
+      "command": "/Users/<you>/mcp-servers/memory-core-venv/bin/memory-core-mcp",
+      "env": {
+        "LLM_API_KEY": "...",
+        "LLM_BASE_URL": "https://api.deepseek.com",
+        "LLM_MODEL": "deepseek-v4-flash"
+      }
+    }
+  }
+}
+```
+
+If this JSON file already has other keys (e.g. Claude Desktop's own other
+preferences), only add the top-level `mcpServers` key — don't touch
+anything else, and back up the file before editing. Fully quit and reopen
+Claude Desktop for the config change to take effect.
+
+### HTTP (remote/cloud, API key)
+
+For not running a Python environment locally at all (deployment steps and
+getting an API key are in the common section above):
+
+```json
+{
+  "mcpServers": {
+    "spomory-cloud": {
+      "url": "https://memory.example.com/mcp-apikey/",
+      "headers": {
+        "x-api-key": "<the key from \"Getting an API key\" above>"
+      }
+    }
+  }
+}
+```
+
+### OAuth 2.1 (official Connector Directory)
+
+Deployment details (why a separate mount, the login mechanism, Origin/RFC
+8707 validation) are in "Deploying OAuth 2.1" in the common section
+above. **Honest status check**: this mount was built to meet Anthropic's
+official Connector Directory requirements (OAuth 2.1 + PKCE), and has
+been walked through end to end for real — a real email magic-link login,
+a real token, real `add_memory`/`search_memory` calls — but **the client
+used for that walkthrough was MCP Inspector, not Claude Desktop's own
+connector UI**, and this hasn't actually been submitted to Anthropic's
+developer portal for Connector Directory review yet. So the protocol
+layer is confirmed working, but the specific "add this connector inside
+Claude Desktop's own settings and go through the browser authorization
+there" click-path hasn't been walked through with a real Claude Desktop
+client — this is a different confidence level than the "verified"
+STDIO/HTTP sections above, noted here honestly rather than glossed over.
+
+### Verification steps and troubleshooting
+
+**Verification steps** (walk through these; should take under 10 minutes):
+
+1. Open Claude Desktop, start a new conversation, and confirm the
+   Connectors/MCP tools list near the input box shows `Spomory` connected
+   (if it's not connected, the usual cause is a wrong `command` path, or
+   a missing `LLM_API_KEY` in the env vars).
+2. Have Claude call `add_memory` to write something, e.g. "Please call
+   Spomory's add_memory tool to remember: I work as a backend engineer at
+   Some Company."
+3. Start a new conversation (or continue the same one) and have Claude
+   call `search_memory` to ask "Where do I work?", confirming it retrieves
+   what was written in step 2.
+4. Have Claude call `forget_memory`, e.g. "Please call Spomory's
+   forget_memory tool to forget that I work as a backend engineer at Some
+   Company," then repeat step 3's query and confirm that memory is gone.
+5. To verify the cloud backend (Epic 8.2), add `DATABASE_URL` to `env`,
+   restart Claude Desktop, and repeat steps 2-4 to confirm identical
+   behavior.
+
+**Troubleshooting**: if Claude Desktop shows "Server disconnected," the
+actual error (not that generic message) is in
+`~/Library/Logs/Claude/mcp-server-Spomory.log` (the filename follows
+whatever key you used under `mcpServers`, so it changes if you rename the
+display name) — check this file first; that's exactly how the macOS TCC
+permission issue above was diagnosed.
+
+## Cursor
+
+### STDIO (local, with a GUI entry point)
+
+Cursor uses an MCP config file with the same shape: globally at
+`~/.cursor/mcp.json`, or per-project at `.cursor/mcp.json` in the project
+root. The content is identical to the Claude Desktop JSON above (the same
+`mcpServers.Spomory` key determines what Cursor displays); restart Cursor
+after editing. **Verified against a real Cursor installation**
+(2026-09-14): `add_memory`/`search_memory`/`forget_memory` and the rest of
+the tools call correctly from Cursor's agent.
+
+**GUI entry point**: instead of hunting the filesystem for `mcp.json`,
+Cursor's **Customize → MCPs → "+ New MCP Server"** opens
+`~/.cursor/mcp.json` directly in a split editor pane — save it and it
+behaves exactly like editing the file by hand.
+
+### HTTP (remote/cloud, API key)
+
+The remote version uses `url`+`headers` instead of the local version's
+`command`+`env`:
+
+```json
+{
+  "mcpServers": {
+    "spomory-cloud": {
+      "url": "https://memory.example.com/mcp-apikey/",
+      "headers": {
+        "x-api-key": "<the key from \"Getting an API key\" above>"
+      }
+    }
+  }
+}
+```
+
+**This remote connection path has also been verified against a real
+Cursor installation** (2026-09-15).
+
+## Codex CLI
+
+### STDIO (local: CLI/TOML + GUI)
+
+Codex CLI's MCP config is TOML, not the JSON shape Claude Desktop/Cursor
+use — default path `~/.codex/config.toml`, with per-project config also
+supported at `.codex/config.toml` (trusted projects only):
+
+```toml
+[mcp_servers.Spomory]
+command = "/absolute/path/to/memory-core-venv/bin/memory-core-mcp"
+
+[mcp_servers.Spomory.env]
+LLM_API_KEY = "your LLM API key"
+LLM_BASE_URL = "https://api.deepseek.com"
+LLM_MODEL = "deepseek-v4-flash"
+```
+
+Or add it with the official CLI command instead of editing the file by hand:
+
+```bash
+codex mcp add Spomory \
+  --env LLM_API_KEY=your-key --env LLM_BASE_URL=https://api.deepseek.com --env LLM_MODEL=deepseek-v4-flash \
+  -- /absolute/path/to/memory-core-venv/bin/memory-core-mcp
+```
+
+`codex mcp list` confirms it registered. **Verified against a real Codex
+CLI installation** (2026-09-14): tool-call behavior matches Claude
+Desktop/Cursor.
+
+**GUI configuration**: the Codex client (desktop/IDE builds) also has a
+point-and-click way to add a server without hand-editing `config.toml`:
+**Plugins → Manage (top right) → MCPs → "+ Add server"**, which opens a
+"Connect to a custom MCP" form. Pick Type **STDIO**:
+
+- Name: `Spomory`
+- Command to launch: `/absolute/path/to/memory-core-venv/bin/memory-core-mcp`
+  (same value as `command` in the TOML example above)
+- Arguments: leave blank
+- Environment variables: add three rows — `LLM_API_KEY`, `LLM_BASE_URL`,
+  `LLM_MODEL` — same values as the TOML example
+- Working directory: can be left blank
+
+**This path (CLI/TOML and the GUI STDIO form) has been verified against a
+real Codex client** (2026-09-15): the GUI-entered configuration connects
+to local Spomory correctly, with tool-call behavior matching the
+CLI/`config.toml` approach above.
+
+### HTTP (remote/cloud, GUI)
+
+Same "Connect to a custom MCP" form, Type **Streamable HTTP**:
+
+- Name: `Spomory Cloud`
+- URL: `https://memory.example.com/mcp-apikey` (swap in your real
+  deployment's domain — this is the API-key mount, not the OAuth one:
+  this form has no full OAuth-authorization-flow entry point, only a
+  "Bearer token" field and plain headers)
+- Bearer token env var: leave blank — Spomory's remote API-key mount
+  expects an `x-api-key` header, not `Authorization: Bearer`
+- Headers from environment variables: add one row, Key = `x-api-key`,
+  Value = the name of a local environment variable (e.g.
+  `SPOMORY_API_KEY`) that you've already set to the key returned by
+  "Getting an API key" above — reference it indirectly via an env var;
+  don't paste the raw key into the plain "Headers" field (that one stores
+  the literal value straight into Codex's config file).
+
+**This path (the Streamable HTTP GUI form) has been verified against a
+real Codex client** (2026-09-15): connects to the remote deployment
+correctly, tool-call behavior matching the local path.
+
+## Doubao (豆包)
+
+Some clients (Doubao is one) don't have a JSON config file at all — they
+have a point-and-click "custom connector" dialog instead, with a dropdown
+for transport type. In Doubao: **技能・连接器・伙伴 → 新建 (+) → 新建自定义
+连接器**, then pick one of the two forms below depending on 传输类型.
+
+### STDIO (local)
+
+See the
+[macOS gotcha](#a-macos-gotcha-dont-install-the-local-runtime-under-documents)
+above first.
+
+- **服务器名称** (server name): anything, e.g. `Spomory`
+- **传输类型** (transport type): **STDIO**
+- **命令** (command): the absolute path to `spomory-mcp` (same value as
+  `command` in the Claude Desktop config above — run `which spomory-mcp`
+  to find it)
+- **参数** (arguments): leave empty
+- **环境变量** (environment variables): add rows for `LLM_API_KEY`,
+  `LLM_BASE_URL`, `LLM_MODEL` — same values as the config JSON example
+  earlier in this doc
+
+### HTTP (remote/cloud, API key)
+
+- **服务器名称** (server name): anything, e.g. `Spomory`
+- **传输类型** (transport type): **HTTP**
+- **服务器 URL**: `https://memory.example.com/mcp-apikey/` (swap in your
+  real deployment's domain — note the trailing slash; Doubao's dialog
+  doesn't add one automatically the way some clients do)
+- **自定义 Headers**: one row — name `x-api-key`, value the key from
+  "Getting an API key" above
+
+Either way, save, and the server's six tools become available the same
+way they do in Claude Desktop/Cursor/Codex. **Both forms verified against
+a real Doubao client** (2026-09-28): saved through this exact dialog,
+then successfully called `add_memory` from a Doubao conversation.
+
+Any other client with the same shape — a URL + custom headers form for
+remote, or a command + args + env form for local (Coze, ModelScope, or
+similar) — should work the same way; these are the two general patterns
+Spomory's local and remote deployments were built to fit.
 
 ## Verification status
 
@@ -683,9 +781,10 @@ reset/full account management — a magic link is enough for login alone.
     got fixed along the way: Cloudflare's "Automatic SSL/TLS" mode probes
     whether the origin supports 443, and the origin only had port 80 open
     — the probe connection hung until timeout instead of falling back
-    cleanly; switching to Flexible mode fixed it. Not done yet: connecting
-    a real Claude Desktop/Cursor client (only curl-simulated MCP calls so
-    far), submitting to the ModelScope MCP marketplace.
+    cleanly; switching to Flexible mode fixed it. Submitting to the
+    ModelScope MCP marketplace is still not done; Claude Desktop, Cursor,
+    Codex CLI, and Doubao have each been connected and verified with real
+    clients — see their respective sections above.
 
 - **OAuth 2.1 — honest verification status**: every method of
   `SpomoryOAuthProvider`'s Protocol (client registration, `authorize` ->
@@ -736,11 +835,14 @@ reset/full account management — a magic link is enough for login alone.
   tab instead of opening it fresh. With that, a real connection went all
   the way through: `add_memory`/`search_memory` both succeeded, the
   written data was confirmed in production Postgres under the correct
-  `user_id`, and the test memory was cleaned up afterward.
+  `user_id`, and the test memory was cleaned up afterward. **This
+  walkthrough used MCP Inspector as the client**; a real Claude Desktop
+  hasn't gone through its own connector UI for this yet — see "Claude
+  Desktop → OAuth 2.1" above.
 
   **2026-09-06 update: Origin header validation and RFC 8707 audience
-  validation are done and deployed too.** See the "Origin header
-  validation + RFC 8707 resource (audience) validation" section above.
+  validation are done and deployed too.** See "Deploying OAuth 2.1" in
+  the common section above.
   The production deployment also needed a real SQLite schema migration
   (`oauth_access_tokens`/`oauth_refresh_tokens` gained a `resource`
   column; the original file was backed up first), after which

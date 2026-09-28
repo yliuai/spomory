@@ -2,14 +2,19 @@
 
 **[English](README.md) | 中文**
 
-Spomory 让 Claude Desktop、Cursor、Codex CLI 拥有一份跨会话保留、并且
-三者共享的记忆。跟其中一个说过一次的事（项目细节、个人偏好、任何一个
-事实），换到另一个客户端也能被记起来，不用重新自我介绍。
+Spomory 让 Claude Desktop、Cursor、Codex CLI、豆包 拥有一份跨会话保留、
+并且这几个客户端共享的记忆。跟其中一个说过一次的事（项目细节、个人偏好、
+任何一个事实），换到另一个客户端也能被记起来，不用重新自我介绍。
 
 它是一个 [MCP](https://modelcontextprotocol.io/) Server，两种跑法：本地
 自托管（免费，数据不出你的电脑）或云端托管（免费注册，记忆跨设备同步）。
-这份 README 讲的是本地这条路；云端路径见
-[spomory.yliuai.com/get-started/remote](https://spomory.yliuai.com/get-started/remote)。
+这几个客户端两种跑法都能接——本地是装到自己电脑上跑（下面"快速开始"
+讲的就是这条路），云端是免注册装环境、直接连托管好的服务。云端这条路
+最快的入口是网页版
+[spomory.yliuai.com/get-started/remote](https://spomory.yliuai.com/get-started/remote)；
+每个客户端本地/云端各自具体怎么填配置，见
+[`docs/mcp_quickstart.md`](docs/mcp_quickstart.md)（按客户端分节，Claude
+Desktop/Cursor/Codex CLI/豆包 各自一节，本地和云端两种接法都有）。
 
 想先看看效果再决定要不要装？[spomory.yliuai.com](https://spomory.yliuai.com)
 上有个免注册 Demo，贴一段文字进去，直接看抽取出来的实体和关系。
@@ -37,6 +42,13 @@ export LLM_MODEL=deepseek-chat                 # 可选；不设默认是 gpt-4o
 各自的配置文件里加几行、指向 `spomory-mcp` 这个命令。完整步骤、每个客户端
 的配置文件示例，以及一个真实踩过的坑（macOS 会拦截跑在 `~/Documents` 下的
 venv）都在 [`docs/mcp_quickstart.md`](docs/mcp_quickstart.md)。
+
+没有配置文件、只有图形化"自定义连接器"表单的客户端——豆包、Coze、
+ModelScope 这类——既可以接托管/远程部署（填一个 URL 加一个请求头），
+也可以接本地进程（填命令+参数+环境变量），见同一份文档里的
+[豆包（Doubao）](docs/mcp_quickstart.md#豆包doubao)这一节（现在 Claude
+Desktop、Cursor、Codex CLI、豆包 各自成节，STDIO/HTTP/OAuth 归在各自
+客户端小节下面）。
 
 > 最容易踩坑的一点：配置文件里要填 `spomory-mcp` 的**绝对路径**（用
 > `which spomory-mcp` 查）,不能只填命令名——客户端启动它时不一定带着你
@@ -66,8 +78,8 @@ OpenAI 兼容 server 就行——vLLM、Ollama、llama.cpp、MLX 都可以；再
 | `get_graph` | 查看某个实体周围的记忆图谱，用于检查 |
 | `export_memory` | 把存过的一切导出成 JSON——你的数据，可带走 |
 
-六个工具都在真实的 Claude Desktop、Cursor、Codex CLI 会话里端到端验证过，
-本地版和云端版都测过——"验证过"具体指什么，见
+六个工具都在真实的 Claude Desktop、Cursor、Codex CLI、豆包 会话里端到端
+验证过，本地版和云端版都测过——"验证过"具体指什么，见
 [`docs/mcp_quickstart.md`](docs/mcp_quickstart.md)。
 
 ## 背后是怎么做的（给感兴趣的人看）
@@ -267,7 +279,7 @@ pytest -m "not slow"      # 跳过需要下载模型/训练的测试，几秒内
 
 | 文档                                                                                                                              | 内容                                                            |
 | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| [mcp_quickstart.md](docs/mcp_quickstart.md) ([English](docs/mcp_quickstart.en.md))                                                | MCP Server 安装、配置、接入 Claude Desktop/Cursor/Codex CLI、真实踩坑记录 |
+| [mcp_quickstart.md](docs/mcp_quickstart.md) ([English](docs/mcp_quickstart.en.md))                                                | MCP Server 安装、配置、接入 Claude Desktop/Cursor/Codex CLI/豆包、真实踩坑记录 |
 | [graph_store_interface.md](docs/graph_store_interface.md) ([English](docs/graph_store_interface.en.md))                          | 存储适配器接口设计说明                                          |
 | [export_format.md](docs/export_format.md) ([English](docs/export_format.en.md))                                                   | "记忆护照"导出格式                                              |
 | [dataset_format.md](docs/dataset_format.md) ([English](docs/dataset_format.en.md))                                                | GRPO 训练数据格式与真实数据集生成过程                           |
