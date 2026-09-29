@@ -233,6 +233,44 @@ memory-core-mcp-remote
 的 HTTP 小节里，把示例里的 `https://memory.example.com/mcp-apikey/` 换成
 这个即可。
 
+**两种协议都支持：Streamable HTTP（`/mcp-apikey/`）和 SSE（`/mcp-apikey-sse/`）**。
+两个挂载点背后是同一个 `MCPServer` 实例，工具调用行为、`x-api-key` 鉴权
+完全一致，区别只是传输协议。为什么需要单独挂一个 SSE 版：**阿里云百炼**
+这类平台目前只支持 SSE 协议的 MCP Server，接不了 Streamable HTTP——这不是
+配置能绕开的问题，是协议层面的硬限制，只能挂一个真正说 SSE 的端点。
+`https://memory.example.com/mcp-apikey-sse/`（或官方托管服务的
+`https://api.yliuai.com/mcp-apikey-sse/`）就是这个端点，配置方式（拿 Key、
+带 `x-api-key` 请求头）跟 Streamable HTTP 版完全一样，只是 URL 后缀不同。
+已经用真实运行的服务器 + 真实 `curl` 走通过完整的 SSE 握手 +
+`initialize` + 鉴权流程（本地和 `api.yliuai.com` 生产环境都验证过），见
+文档最后"验证状态"。
+
+**自己部署 SSE 挂载点时的一个真实坑：nginx 默认开启的响应缓冲会把 SSE
+这种流式响应缓冲住不往外发**，客户端连上去之后长时间收不到任何数据，
+表现很像"连不通"但其实端口和鉴权都是对的——本项目生产部署上真实踩到过
+这个问题。修法是给 `/mcp-apikey-sse/` 这条路径单独关掉缓冲（不用整个
+server 块都关，避免影响其他路由的正常缓冲行为）：
+
+```nginx
+location /mcp-apikey-sse/ {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header Connection "";
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_buffering off;      # 关键：SSE 是流式响应，缓冲会让客户端迟迟收不到数据
+    proxy_cache off;
+    proxy_read_timeout 24h;   # 连接要长时间保持打开，默认超时（通常 60s）太短
+}
+```
+
+这个 `location` 块要写在通用的 `location /` 之前（nginx 按前缀匹配长度
+选择，更具体的路径优先），且这两个 `location` 都指向同一个
+`proxy_pass`，不冲突。如果用的是别的反向代理（Caddy、Traefik 等），
+原理一样：找到"关闭响应缓冲/关闭 buffering"的等效配置项，加到 SSE 这条
+路径上。
+
 ### 注册获取 API Key
 
 ```bash
@@ -670,6 +708,26 @@ codex mcp add Spomory \
     导致连接悬挂超时的问题（改成 Flexible 模式解决）。提交到魔搭 MCP
     广场这一步还没做；Claude Desktop/Cursor/Codex CLI/豆包 这几个真实
     客户端已经分别连上验证过，见上面各自的章节。
+  - **2026-09-29 追加：`/mcp-apikey-sse` SSE 挂载点**——起因是发现阿里云
+    百炼目前只支持 SSE 协议的 MCP Server，接不了已有的 Streamable HTTP
+    挂载点，不是配置问题，是协议层面的硬限制。加了 `_mount_mcp_sse_app`
+    （复用同一个 `MCPServer` 实例，跟 Streamable HTTP 版共享一模一样的
+    工具调用/鉴权逻辑，只是换一种传输协议），自动化测试层面加了
+    `tests/test_mcp_sse_mount.py`（挂载点存在、不跟另外两个挂载点冲突、
+    `remote_mcp_server=None` 时也不会被挂上）——完整的 SSE 协议握手没有
+    自动化测试覆盖：MCP SDK 的 `sse_app()` 是那种"连上就一直占着连接不
+    返回"的手写 ASGI handler，Starlette 的 `TestClient`（用一个后台线程
+    跑真正的 anyio 事件循环模拟同步调用）跟这种长连接 handler 搭配会
+    卡死——确认过这是测试工具的限制，不是这个挂载点真的有问题：用真实
+    `uvicorn` 进程跑起同一个 app，`curl` 直接对着真实协议走了一遍完整流程
+    （连接拿到真实的 `event: endpoint`，对返回的 `message_path` 发送真实
+    `initialize` 请求并带上真实 API Key，`event: message` 里收到了正确
+    的 `serverInfo.name: "Spomory"`），本地和 `api.yliuai.com` 生产环境
+    都各自完整验证过一遍。部署到生产环境时还真实踩到一个坑：nginx 默认
+    开启的响应缓冲会把 SSE 这种流式响应缓冲住不往外发，客户端连上去很长
+    时间收不到任何数据，表现很像端口不通，但其实鉴权和路由都是对的——
+    给 `/mcp-apikey-sse/` 这条路径单独关掉 `proxy_buffering` 之后才正常，
+    具体配置见上面"部署远程/云端 Server"一节。
 
 - **OAuth 2.1 接入——诚实的验证状态**：`SpomoryOAuthProvider` 的全部
   Protocol 方法（客户端注册、`authorize`→pending 记录、授权码签发与

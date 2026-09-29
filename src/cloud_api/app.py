@@ -85,22 +85,55 @@ class RegisterRequestSentResponse(BaseModel):
     message: str
 
 
+def _transport_security(allowed_hosts: list[str] | None, allowed_origins: list[str] | None):
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    return (
+        TransportSecuritySettings(allowed_hosts=allowed_hosts, allowed_origins=allowed_origins or [])
+        if allowed_hosts
+        else None
+    )
+
+
 def _mount_mcp_app(
     mcp_server: MCPServer,
     allowed_hosts: list[str] | None,
     streamable_http_path: str,
     allowed_origins: list[str] | None = None,
 ):
-    """Builds the ASGI app for one MCPServer mount."""
-    from mcp.server.transport_security import TransportSecuritySettings
-
-    transport_security = (
-        TransportSecuritySettings(allowed_hosts=allowed_hosts, allowed_origins=allowed_origins or [])
-        if allowed_hosts
-        else None
-    )
+    """Builds the Streamable HTTP ASGI app for one MCPServer mount."""
     return mcp_server.streamable_http_app(
-        streamable_http_path=streamable_http_path, transport_security=transport_security
+        streamable_http_path=streamable_http_path,
+        transport_security=_transport_security(allowed_hosts, allowed_origins),
+    )
+
+
+def _mount_mcp_sse_app(
+    mcp_server: MCPServer,
+    allowed_hosts: list[str] | None,
+    allowed_origins: list[str] | None = None,
+):
+    """Builds the legacy SSE ASGI app for the same `MCPServer` instance a
+    Streamable HTTP mount also serves -- both transports call into the same
+    tool implementations (including the `x-api-key` header check in
+    `remote.py`, read from `ctx.headers`, which the SDK populates from the
+    underlying HTTP request regardless of which transport carried it), so
+    this needs no auth logic of its own.
+
+    Exists for clients that only speak the older SSE transport and can't be
+    pointed at Streamable HTTP at all -- e.g. 阿里云百炼 (Alibaba Cloud
+    Bailian), whose MCP integration docs describe SSE-only support as of
+    this writing. `sse_path="/"` keeps the mount prefix below as the only
+    copy of the path in the final route, matching the same trick
+    `streamable_http_path="/"` plays for the Streamable HTTP mount --
+    `message_path` stays relative (`/messages/`) since the SSE transport
+    tells connecting clients where to POST via the stream itself; nothing
+    external needs to be configured with that second URL by hand.
+    """
+    return mcp_server.sse_app(
+        sse_path="/",
+        message_path="/messages/",
+        transport_security=_transport_security(allowed_hosts, allowed_origins),
     )
 
 
@@ -217,6 +250,7 @@ def create_app(
     store = auth_store or AuthStore()
 
     remote_mcp_asgi_app = None
+    remote_mcp_sse_asgi_app = None
     if remote_mcp_server is not None:
         # streamable_http_path="/" so the "/mcp-apikey" mount prefix below
         # is the only copy of the path in the final route (the default
@@ -224,6 +258,10 @@ def create_app(
         remote_mcp_asgi_app = _mount_mcp_app(
             remote_mcp_server, allowed_hosts, streamable_http_path="/", allowed_origins=allowed_origins
         )
+        # Same underlying MCPServer, a second transport -- see
+        # _mount_mcp_sse_app's docstring for why this exists (clients like
+        # 阿里云百炼 that only speak SSE, not Streamable HTTP).
+        remote_mcp_sse_asgi_app = _mount_mcp_sse_app(remote_mcp_server, allowed_hosts, allowed_origins)
 
     oauth_mcp_asgi_app = None
     if oauth_mcp_server is not None:
@@ -244,7 +282,9 @@ def create_app(
             oauth_mcp_server, allowed_hosts, streamable_http_path="/mcp", allowed_origins=allowed_origins
         )
 
-    mcp_asgi_apps = [a for a in (remote_mcp_asgi_app, oauth_mcp_asgi_app) if a is not None]
+    mcp_asgi_apps = [
+        a for a in (remote_mcp_asgi_app, remote_mcp_sse_asgi_app, oauth_mcp_asgi_app) if a is not None
+    ]
 
     lifespan = None
     if mcp_asgi_apps:
@@ -449,6 +489,11 @@ def create_app(
     # Neither mount gates access at this layer.
     if remote_mcp_asgi_app is not None:
         app.mount("/mcp-apikey", remote_mcp_asgi_app)
+    if remote_mcp_sse_asgi_app is not None:
+        # Same auth story as /mcp-apikey above (x-api-key checked inside the
+        # tool calls, transport-agnostic) -- see _mount_mcp_sse_app's
+        # docstring for which clients this mount is for.
+        app.mount("/mcp-apikey-sse", remote_mcp_sse_asgi_app)
     if oauth_mcp_asgi_app is not None:
         # Mounted at the root -- see the comment above on why its own
         # streamable_http_path="/mcp" (not this mount's prefix) is what

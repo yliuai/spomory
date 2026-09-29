@@ -269,6 +269,51 @@ referenced in `docs/privacy_policy_draft.en.md`, not internal
 information. Swap it in wherever a client section below shows the
 placeholder `https://memory.example.com/mcp-apikey/`.
 
+**Both protocols are supported: Streamable HTTP (`/mcp-apikey/`) and SSE
+(`/mcp-apikey-sse/`)**. Both mounts wrap the same `MCPServer` instance —
+identical tool-call behavior and `x-api-key` auth either way, just a
+different wire transport. Why a separate SSE mount exists at all:
+**阿里云百炼 (Alibaba Cloud Bailian)** currently only supports the SSE
+protocol for MCP servers, not Streamable HTTP — not something a client
+config can work around, a real protocol-level constraint that needs an
+endpoint actually speaking SSE. `https://memory.example.com/mcp-apikey-sse/`
+(or `https://api.yliuai.com/mcp-apikey-sse/` on the officially hosted
+service) is that endpoint — same API key, same `x-api-key` header, just a
+different URL suffix. Verified end to end against a real running server
+(both locally and against the `api.yliuai.com` production deployment) with
+real `curl`: the SSE handshake, a real `initialize` call, and API-key auth
+all confirmed working — see "Verification status" at the end of this doc.
+
+**A real gotcha hit self-deploying this: nginx's default response
+buffering holds a streaming SSE response instead of forwarding it as it's
+written**, so a connecting client sees nothing for a long time even though
+the port and auth are both fine — this looked exactly like "can't connect"
+until traced to buffering, on this project's own production deployment.
+Fix: turn buffering off for just the `/mcp-apikey-sse/` path (not the whole
+server block, so other routes keep their normal buffering behavior):
+
+```nginx
+location /mcp-apikey-sse/ {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header Connection "";
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_buffering off;      # the fix -- SSE is a streaming response; buffering delays it reaching the client
+    proxy_cache off;
+    proxy_read_timeout 24h;   # the connection stays open a long time; the usual default (~60s) is too short
+}
+```
+
+This `location` block needs to come before the general `location /` one
+(nginx picks the longest matching prefix, so order between them doesn't
+actually matter for correctness, but keeping the more specific one first
+reads clearer) — both point at the same `proxy_pass`, no conflict. On a
+different reverse proxy (Caddy, Traefik, etc.), same idea: find its
+equivalent "disable response buffering" setting and apply it to this one
+path.
+
 ### Getting an API key
 
 ```bash
@@ -785,6 +830,35 @@ Spomory's local and remote deployments were built to fit.
     ModelScope MCP marketplace is still not done; Claude Desktop, Cursor,
     Codex CLI, and Doubao have each been connected and verified with real
     clients — see their respective sections above.
+  - **2026-09-29 addition: the `/mcp-apikey-sse` SSE mount** — added
+    because 阿里云百炼 (Alibaba Cloud Bailian) turned out to only support
+    the SSE protocol for MCP servers, unable to connect to the existing
+    Streamable HTTP mount at all — not a config issue, a real protocol-
+    level constraint. `_mount_mcp_sse_app` wraps the same `MCPServer`
+    instance the Streamable HTTP mount does (identical tool-call/auth
+    logic, just a different wire transport). Automated coverage is in
+    `tests/test_mcp_sse_mount.py` (the mount exists, doesn't collide with
+    the other two, and is absent when `remote_mcp_server=None`) — a full
+    automated SSE protocol handshake isn't covered there: the MCP SDK's
+    `sse_app()` is a hand-rolled ASGI handler that holds the connection
+    open indefinitely by design, and Starlette's `TestClient` (which runs
+    a real anyio event loop on a background thread to fake synchronous
+    calls) deadlocks against that kind of long-lived handler — confirmed
+    to be a test-harness limitation, not a real bug in the mount, by
+    running the exact same app under a real `uvicorn` process and driving
+    the actual protocol against it with `curl`: connecting produced a real
+    `event: endpoint`, POSTing a real `initialize` request with a real API
+    key to the returned message path got a `202`, and the matching
+    `event: message` reply came back with the correct
+    `serverInfo.name: "Spomory"` — verified this way against both a local
+    run and the live `api.yliuai.com` production deployment. A real
+    deployment gotcha surfaced along the way: nginx's default response
+    buffering held the SSE stream instead of forwarding it as written, so
+    a connecting client saw nothing for a long time even though routing
+    and auth were both fine — looked exactly like a dead endpoint until
+    traced to buffering. Fixed by turning `proxy_buffering` off for just
+    the `/mcp-apikey-sse/` location; see "Deploying the remote/cloud
+    server" above for the exact config.
 
 - **OAuth 2.1 — honest verification status**: every method of
   `SpomoryOAuthProvider`'s Protocol (client registration, `authorize` ->
