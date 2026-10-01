@@ -2,9 +2,14 @@
 
 **[English](README.md) | 中文**
 
-Spomory 让 Claude Desktop、Cursor、Codex CLI、豆包 拥有一份跨会话保留、
-并且这几个客户端共享的记忆。跟其中一个说过一次的事（项目细节、个人偏好、
-任何一个事实），换到另一个客户端也能被记起来，不用重新自我介绍。
+Spomory 让 AI 客户端拥有一份跨会话保留、并且彼此共享的记忆。跟其中一个
+说过一次的事（项目细节、个人偏好、任何一个事实），换到另一个客户端也
+能被记起来，不用重新自我介绍。它是一个 MCP Server，所以理论上任何支持
+MCP 的客户端都能接：**Claude Desktop、Cursor、Codex CLI、豆包**这四个
+已经用真实客户端会话端到端验证过（见下面"能做什么"一节）；
+**魔搭（ModelScope）、Coze、阿里云百炼**也是已知能接的平台，走的是和
+其他远程 MCP 客户端一样的连接方式（Streamable HTTP，百炼目前还不支持
+Streamable HTTP，走的是 SSE）。
 
 它是一个 [MCP](https://modelcontextprotocol.io/) Server，两种跑法：本地
 自托管（免费，数据不出你的电脑）或云端托管（免费注册，记忆跨设备同步）。

@@ -4,11 +4,16 @@
 
 **English | [中文](README.zh-CN.md)**
 
-Spomory gives Claude Desktop, Cursor, Codex CLI, and Doubao (豆包) a
-memory that persists across sessions — and is shared between all of
-them. Tell one of them something once (a project detail, a preference, a
-fact about yourself) and any of them can recall it later, without you
-repeating yourself.
+Spomory gives AI clients a memory that persists across sessions — and is
+shared between all of them. Tell one of them something once (a project
+detail, a preference, a fact about yourself) and any of them can recall
+it later, without you repeating yourself. It's an MCP server, so it
+works with any MCP-compatible client: **Claude Desktop, Cursor, Codex
+CLI, and Doubao (豆包)** have each been verified end-to-end with a real
+client session (see "What it can do" below); **ModelScope, Coze, and
+阿里云百炼 (Alibaba Cloud Bailian)** are also known-compatible, connecting
+the same way any remote MCP client does (Streamable HTTP, or SSE for
+百炼 specifically, which doesn't support Streamable HTTP yet).
 
 It runs as an [MCP](https://modelcontextprotocol.io/) server, either
 locally on your own machine (free, nothing leaves your computer) or as a
