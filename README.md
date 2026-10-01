@@ -27,9 +27,12 @@ Exact local/cloud configuration for each individual client lives in
 section per client — Claude Desktop/Cursor/Codex CLI/Doubao — each
 covering both connection methods).
 
-Curious what it looks like before installing anything? There's a
+Curious what it actually does before installing anything? There's a
 no-signup demo at [spomory.yliuai.com](https://spomory.yliuai.com) —
-paste in some text, see the entities and relations it extracts.
+paste in some text and see it turned into the structured facts that
+would then follow you across Claude, Cursor, Codex CLI, and every other
+client you connect, persisting across sessions instead of resetting
+each time.
 
 ## Get started
 

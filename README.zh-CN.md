@@ -21,8 +21,10 @@ Streamable HTTP，走的是 SSE）。
 [`docs/mcp_quickstart.md`](docs/mcp_quickstart.md)（按客户端分节，Claude
 Desktop/Cursor/Codex CLI/豆包 各自一节，本地和云端两种接法都有）。
 
-想先看看效果再决定要不要装？[spomory.yliuai.com](https://spomory.yliuai.com)
-上有个免注册 Demo，贴一段文字进去，直接看抽取出来的实体和关系。
+想先看看它到底在干什么再决定要不要装？
+[spomory.yliuai.com](https://spomory.yliuai.com) 上有个免注册 Demo，贴一段
+文字进去，看它被抽取成结构化的事实——这些事实正是能跨 Claude、Cursor、
+Codex CLI 等客户端共享、不随会话结束而消失的东西。
 
 ## 快速开始
 
