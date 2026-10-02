@@ -34,7 +34,7 @@ class ExportedEntity(BaseModel):
     memory_type: str
     attributes: dict[str, str]
     aliases: list[str]
-    provenance: list[dict[str, str]]
+    provenance: list[dict[str, str | None]]
     created_at: datetime
     updated_at: datetime
 
@@ -60,7 +60,7 @@ class ExportedRelation(BaseModel):
     object_id: str
     confidence: float
     memory_type: str
-    provenance: list[dict[str, str]]
+    provenance: list[dict[str, str | None]]
     created_at: datetime
     updated_at: datetime
 

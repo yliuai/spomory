@@ -35,6 +35,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
+from memory_core.mcp_server.server import (
+    _add_memory,
+    _export_memory,
+    _forget_all_memory,
+    _forget_memory,
+    _get_graph,
+    _search_memory,
+)
+
 from .auth import AuthenticatedUser, AuthStore
 from .demo import DemoTextTooLongError, extract_and_search
 from .email import EmailSender
@@ -43,7 +52,9 @@ from .oauth_store import OAuthStore
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
 
+    from memory_core.audit import AuditLog
     from memory_core.llm.base import LLMProvider
+    from memory_core.mcp_server.remote import _UserStores
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +94,19 @@ class RegisterResponse(BaseModel):
 
 class RegisterRequestSentResponse(BaseModel):
     message: str
+
+
+class AddMemoryRequest(BaseModel):
+    text: str
+    source_id: str = "api"
+
+
+class ForgetMemoryRequest(BaseModel):
+    query: str
+
+
+class MemoryResultResponse(BaseModel):
+    result: str
 
 
 def _transport_security(allowed_hosts: list[str] | None, allowed_origins: list[str] | None):
@@ -186,6 +210,9 @@ def create_app(
     demo_llm: LLMProvider | None = None,
     demo_embedder: object | None = None,
     admin_stats_token: str | None = None,
+    rest_stores: _UserStores | None = None,
+    rest_embedder: object | None = None,
+    rest_audit_log: AuditLog | None = None,
 ) -> FastAPI:
     """`allowed_hosts` is the MCP transport's DNS-rebinding-protection
     allowlist (checked against the request's `Host` header) -- it applies to
@@ -246,6 +273,23 @@ def create_app(
     grouped by day, registration-funnel totals), never a raw email or any
     other per-user value, so a leaked dashboard page can't turn into a
     user-data leak the way a raw export would.
+
+    `rest_stores`/`rest_embedder`/`rest_audit_log` mount a plain REST
+    surface (`/v1/memories`, `/v1/graph`, `/v1/export`) over the same six
+    tools `remote_mcp_server` exposes over MCP -- same `x-api-key` auth
+    (`enforce_quota`, already used by `/me`), same per-user store cache, so
+    a REST caller and an MCP client against the same deployment share one
+    memory graph. This exists for clients that can't speak MCP at all:
+    ChatGPT Custom GPT Actions and no-code automation tools (n8n, Zapier)
+    both consume a plain OpenAPI-described REST API, not an MCP transport
+    -- FastAPI already serves one at `/openapi.json` for the routes above,
+    these new ones just extend it, no separate spec to maintain. Pass
+    `rest_stores=stores` (the same `_UserStores` instance `remote_mcp_server`
+    was built with, via `build_remote_server(..., stores=stores)`) to keep
+    both surfaces resolving to the same per-user store cache rather than
+    each opening its own Postgres connection per tenant. Opt-in like
+    `admin_stats_token` above: unset by default, so an existing deployment
+    is unaffected until explicitly configured.
     """
     store = auth_store or AuthStore()
 
@@ -339,6 +383,69 @@ def create_app(
     def me(user: AuthenticatedUser = Depends(enforce_quota)) -> dict[str, str]:  # noqa: B008
         store.record_usage(user.api_key_id, endpoint="/me")
         return {"user_id": user.user_id}
+
+    if rest_stores is not None and rest_embedder is not None:
+        # Plain REST counterpart to the MCP tools -- see create_app's
+        # docstring for why this exists (clients that can't speak MCP:
+        # Custom GPT Actions, no-code automation). `client_name="rest-api"`
+        # on the add_memory call lets cross-client conflict detection
+        # (policy.py's _is_cross_client_conflict) tell a fact written here
+        # apart from one written through an MCP client, the same way it
+        # already distinguishes Claude Desktop from Cursor.
+
+        @app.post("/v1/memories", response_model=MemoryResultResponse)
+        def rest_add_memory(
+            req: AddMemoryRequest, user: AuthenticatedUser = Depends(enforce_quota)  # noqa: B008
+        ) -> MemoryResultResponse:
+            store.record_usage(user.api_key_id, endpoint="/v1/memories")
+            _, ingestor = rest_stores.resolve(user.user_id)
+            result = _add_memory(ingestor, req.text, req.source_id, client_name="rest-api")
+            return MemoryResultResponse(result=result)
+
+        @app.get("/v1/memories/search", response_model=MemoryResultResponse)
+        def rest_search_memory(
+            query: str, top_k: int = 10, user: AuthenticatedUser = Depends(enforce_quota)  # noqa: B008
+        ) -> MemoryResultResponse:
+            store.record_usage(user.api_key_id, endpoint="/v1/memories/search")
+            user_store, _ = rest_stores.resolve(user.user_id)
+            result = _search_memory(user_store, rest_embedder, query, top_k)
+            return MemoryResultResponse(result=result)
+
+        @app.post("/v1/memories/forget", response_model=MemoryResultResponse)
+        def rest_forget_memory(
+            req: ForgetMemoryRequest, user: AuthenticatedUser = Depends(enforce_quota)  # noqa: B008
+        ) -> MemoryResultResponse:
+            store.record_usage(user.api_key_id, endpoint="/v1/memories/forget")
+            user_store, _ = rest_stores.resolve(user.user_id)
+            result = _forget_memory(user_store, rest_embedder, req.query, rest_audit_log, user.user_id)
+            return MemoryResultResponse(result=result)
+
+        @app.post("/v1/memories/forget-all", response_model=MemoryResultResponse)
+        def rest_forget_all_memory(
+            confirm: bool = False, user: AuthenticatedUser = Depends(enforce_quota)  # noqa: B008
+        ) -> MemoryResultResponse:
+            store.record_usage(user.api_key_id, endpoint="/v1/memories/forget-all")
+            user_store, _ = rest_stores.resolve(user.user_id)
+            result = _forget_all_memory(user_store, rest_audit_log, user.user_id, confirm=confirm)
+            return MemoryResultResponse(result=result)
+
+        @app.get("/v1/graph", response_model=MemoryResultResponse)
+        def rest_get_graph(
+            entity_name: str, hops: int = 1, user: AuthenticatedUser = Depends(enforce_quota)  # noqa: B008
+        ) -> MemoryResultResponse:
+            store.record_usage(user.api_key_id, endpoint="/v1/graph")
+            user_store, _ = rest_stores.resolve(user.user_id)
+            result = _get_graph(user_store, entity_name, hops)
+            return MemoryResultResponse(result=result)
+
+        @app.get("/v1/export", response_model=MemoryResultResponse)
+        def rest_export_memory(
+            subject_id: str = "default", user: AuthenticatedUser = Depends(enforce_quota)  # noqa: B008
+        ) -> MemoryResultResponse:
+            store.record_usage(user.api_key_id, endpoint="/v1/export")
+            user_store, _ = rest_stores.resolve(user.user_id)
+            result = _export_memory(user_store, subject_id)
+            return MemoryResultResponse(result=result)
 
     if demo_llm is not None and demo_embedder is not None:
 

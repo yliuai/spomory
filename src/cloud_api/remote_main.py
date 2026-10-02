@@ -138,6 +138,14 @@ def default_remote_app() -> FastAPI:
         # ADMIN_STATS_TOKEN is set, so an existing deployment's env file
         # keeps working unchanged until this is deliberately turned on.
         admin_stats_token=os.environ.get("ADMIN_STATS_TOKEN"),
+        # Unlike OAuth/email/admin-stats, this needs no new secret or env
+        # var -- it's the same six tools, same x-api-key auth, same `stores`
+        # cache the MCP mount already uses, just reachable over plain REST
+        # too (for Custom GPT Actions / no-code tools that can't speak MCP
+        # at all). Always on wherever the remote server itself is.
+        rest_stores=stores,
+        rest_embedder=embedder,
+        rest_audit_log=audit_log,
     )
 
 
