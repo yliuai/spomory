@@ -383,6 +383,58 @@ the same host.
   this remote server are currently two independent distribution channels
   that don't share data.
 
+### REST API (for clients that can't speak MCP)
+
+ChatGPT's Custom GPT Actions, and no-code automation tools like n8n/Zapier,
+speak plain REST + OpenAPI, not the MCP protocol — none of the MCP mounts
+above are reachable from them. This REST surface is the same six tools
+wearing a different transport — same auth, same per-user storage as
+`/mcp-apikey` (the same `x-api-key`, the same `user_id`-scoped Postgres
+graph), so one account sees the same memories whether it connects over
+REST or MCP:
+
+| Method + path | Tool | Parameters |
+|---|---|---|
+| `POST /v1/memories` | `add_memory` | body: `{"text": "...", "source_id": "api"}` |
+| `GET /v1/memories/search` | `search_memory` | query: `?query=...&top_k=10` |
+| `POST /v1/memories/forget` | `forget_memory` | body: `{"query": "..."}` |
+| `POST /v1/memories/forget-all` | `forget_all_memory` | query: `?confirm=true` |
+| `GET /v1/graph` | `get_graph` | query: `?entity_name=...&hops=1` |
+| `GET /v1/export` | `export_memory` | query: `?subject_id=default` |
+
+```bash
+curl -X POST https://memory.example.com/v1/memories \
+  -H "x-api-key: <the key from above>" -H "Content-Type: application/json" \
+  -d '{"text": "I work as a backend engineer at Some Company"}'
+```
+
+Every response is shaped `{"result": "..."}` — the identical text the
+matching MCP tool would return. FastAPI already serves an OpenAPI document
+at `https://memory.example.com/openapi.json` (the existing `/users/register`
+routes have always been on it); these six new routes just extend that same
+spec — no separate document to maintain. Point ChatGPT's Custom GPT Actions
+editor at that URL directly to import them.
+
+`_add_memory(..., client_name="rest-api")` tags every REST-written fact
+with a fixed source name, the same mechanism that auto-detects `claude-ai`/
+`cursor` and so on for MCP clients — a fact written over REST that
+contradicts one written over MCP gets treated as a cross-client conflict
+like any other, not silently overwritten just because it came through a
+different transport.
+
+**Verified against the real production deployment** (2026-10-02): all six
+routes exercised with real `curl` calls (add → search → export, and the
+report-then-confirm two-step delete flow), with `openapi.json` confirmed
+to include all six. That verification also caught a real, pre-existing
+bug: `export_memory` 500'd on any relation whose provenance had
+`session_id=None` (the common case — only the remote streamable-http
+transport ever actually populates it), because the export schema's
+`provenance` field was still typed `list[dict[str, str]]` from before
+`client_name`/`session_id` were added as optional fields (earlier this
+session, for cross-client conflict detection). Fixed to
+`list[dict[str, str | None]]`, with a regression test that reproduces the
+exact scenario and fails without the fix.
+
 ### Deploying OAuth 2.1 (for Anthropic's official Connector Directory)
 
 The API-key path above is enough for ModelScope-style platforms, but

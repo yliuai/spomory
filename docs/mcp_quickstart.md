@@ -328,6 +328,50 @@ Key），只是多了邮箱验证这一步。部署上需要设置 `RESEND_API_K
 - 本地↔云端记忆双向同步——本地 stdio 版和这条远程版目前是两个独立的
   分发渠道，不共享数据。
 
+### REST API（给不会说 MCP 的客户端用）
+
+ChatGPT 的 Custom GPT Actions、n8n/Zapier 这类自动化工具，说的是普通
+REST + OpenAPI，不是 MCP 协议，接不了上面那些 MCP 挂载点。这套 REST 接口
+是同样六个工具的另一层皮——鉴权、每个用户的存储都和 `/mcp-apikey` 共用
+同一套（同一个 `x-api-key`、同一个按 `user_id` 分的 Postgres 图），一个
+账号不管走 REST 还是 MCP 连，看到的是同一份记忆：
+
+| 方法 + 路径 | 对应工具 | 参数 |
+|---|---|---|
+| `POST /v1/memories` | `add_memory` | body: `{"text": "...", "source_id": "api"}` |
+| `GET /v1/memories/search` | `search_memory` | query: `?query=...&top_k=10` |
+| `POST /v1/memories/forget` | `forget_memory` | body: `{"query": "..."}` |
+| `POST /v1/memories/forget-all` | `forget_all_memory` | query: `?confirm=true` |
+| `GET /v1/graph` | `get_graph` | query: `?entity_name=...&hops=1` |
+| `GET /v1/export` | `export_memory` | query: `?subject_id=default` |
+
+```bash
+curl -X POST https://memory.example.com/v1/memories \
+  -H "x-api-key: <上面拿到的 key>" -H "Content-Type: application/json" \
+  -d '{"text": "我在某某公司做后端开发"}'
+```
+
+所有返回都是 `{"result": "..."}`，和对应 MCP 工具返回的文本完全一样。
+FastAPI 自带的 OpenAPI 文档本来就挂在 `https://memory.example.com/openapi.json`
+（`/users/register` 这些老接口一直都在上面），这六个新路由加上去之后
+自动出现在同一份 spec 里，不用额外维护一份文档——拿这个 URL 直接导入
+ChatGPT 的 Custom GPT Actions 编辑器即可。
+
+通过 `_add_memory(..., client_name="rest-api")` 固定打了一个来源标签，
+跟 MCP 那边自动识别的 `claude-ai`/`cursor` 之类是同一套机制——走 REST
+写入的事实和走 MCP 写入的事实如果冲突，一样会被当成"不同来源"处理，
+不会被 REST 这边默默覆盖掉。
+
+**已在真实生产环境验证过**（2026-10-02）：六个路由挨个用真实 `curl` 走
+了一遍（新增→检索→导出→先报告再确认删除的两步流程），`openapi.json`
+里确认六个新路由都出现了。验证过程中还真实揪出一个预先存在的 bug：
+`export_memory` 对着一条 `session_id` 是 `None` 的关系（这是最常见的
+情况——只有远程 streamable-http 这一种传输会真的填上 `session_id`）
+会直接 500，根因是导出 schema 里 `provenance` 字段的类型还停留在加
+`client_name`/`session_id` 这两个可选字段之前（`list[dict[str, str]]`
+不接受 `None` 值），已经修成 `list[dict[str, str | None]]` 并补了专门
+复现这个场景的回归测试。
+
 ### 部署 OAuth 2.1（对齐 Claude 官方 Connector 目录）
 
 上面的 API Key 接入方式够用于魔搭这类平台，但 Anthropic 官方 Connector
