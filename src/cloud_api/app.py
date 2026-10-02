@@ -30,9 +30,10 @@ import secrets
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import TYPE_CHECKING
 
-from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 from memory_core.mcp_server.server import (
@@ -57,6 +58,17 @@ if TYPE_CHECKING:
     from memory_core.mcp_server.remote import _UserStores
 
 logger = logging.getLogger(__name__)
+
+# Declared via fastapi.security (not a plain Header(...) parameter) so the
+# generated OpenAPI spec actually says these routes need auth -- a plain
+# Header() shows up in the spec as just another optional parameter, with no
+# `security`/`securitySchemes` entry at all, which is what a tool importing
+# the spec (n8n, Zapier, ChatGPT Actions) relies on to know to prompt for a
+# credential instead of just sending unauthenticated requests and getting
+# silent 401s. auto_error=False on both: require_api_key below does its own
+# combined check so it can accept either header and return one clear 401.
+_api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
+_bearer_scheme = HTTPBearer(auto_error=False)
 
 
 class RegisterRequest(BaseModel):
@@ -356,18 +368,20 @@ def create_app(
         )
 
     def require_api_key(
-        x_api_key: str | None = Header(default=None),
-        authorization: str | None = Header(default=None),
+        x_api_key: str | None = Security(_api_key_header),
+        bearer: HTTPAuthorizationCredentials | None = Security(_bearer_scheme),  # noqa: B008
     ) -> AuthenticatedUser:
         """Accepts the key as either `x-api-key` (the original scheme, every
         other client in these docs uses it) or `Authorization: Bearer <key>`
-        -- the latter exists specifically so ChatGPT's Custom GPT Actions
-        editor's standard "API Key" auth type (Bearer only, no custom
-        header name in the UI) works against this REST surface without any
-        special-casing needed on the GPT builder's side."""
-        api_key = x_api_key
-        if not api_key and authorization and authorization.lower().startswith("bearer "):
-            api_key = authorization[len("bearer ") :]
+        -- the latter exists specifically so tools that auto-import the
+        OpenAPI spec (n8n, Zapier, ChatGPT Actions) and only offer a plain
+        "Bearer token" auth type work against this REST surface without any
+        special-casing. Declared via `Security(...)` rather than a plain
+        `Header(...)` so both show up as real `securitySchemes` entries in
+        `/openapi.json` -- that's what makes an importing tool realize these
+        routes need a credential and prompt for one, instead of silently
+        sending unauthenticated requests and getting 401s back."""
+        api_key = x_api_key or (bearer.credentials if bearer else None)
         if not api_key:
             raise HTTPException(
                 status_code=401, detail="missing API key (x-api-key header or Authorization: Bearer)"

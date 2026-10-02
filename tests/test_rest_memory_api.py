@@ -127,6 +127,25 @@ def test_authorization_bearer_header_works_as_an_alternative_to_x_api_key():
     assert resp.status_code == 200
 
 
+def test_openapi_spec_declares_auth_as_a_real_security_scheme():
+    """Why this matters: a tool auto-importing the spec (n8n, Zapier,
+    ChatGPT Actions) only knows to prompt for a credential if the spec
+    marks a route as needing one via `security`/`components.securitySchemes`
+    -- a plain `Header(...)` parameter looks like just another optional
+    input, and the tool would silently send unauthenticated requests and
+    get 401s back with no indication why."""
+    app, _ = _app()
+    spec = app.openapi()
+
+    schemes = spec["components"]["securitySchemes"]
+    assert schemes["APIKeyHeader"] == {"type": "apiKey", "in": "header", "name": "x-api-key"}
+    assert schemes["HTTPBearer"] == {"type": "http", "scheme": "bearer"}
+
+    security = spec["paths"]["/v1/memories"]["post"]["security"]
+    assert {"APIKeyHeader": []} in security
+    assert {"HTTPBearer": []} in security
+
+
 # --- real tool-call behavior, needs a live Postgres ----------------------
 
 pytestmark_db = pytest.mark.skipif(not DATABASE_URL, reason="set DATABASE_URL to a real Postgres instance to run this")
