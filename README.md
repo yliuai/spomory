@@ -38,7 +38,9 @@ each time.
 
 Requires Python 3.11+.
 
-**1. Install**
+**1. Install.** Or skip this step entirely — step 3's config can point
+straight at `uvx`, which fetches and runs it on demand, nothing to
+pre-install:
 
 ```bash
 pip install "spomory[llm,embedding,mcp]"
@@ -70,12 +72,22 @@ section there, with STDIO/HTTP/OAuth grouped underneath it).
 
 > The one thing that trips people up: the config needs the **absolute
 > path** to `spomory-mcp` (run `which spomory-mcp` to find it) — the
-> client doesn't necessarily launch it with your shell's `PATH` set.
+> client doesn't necessarily launch it with your shell's `PATH` set. This
+> whole gotcha (and step 1) disappears if `command` is `uvx` instead — see
+> the quickstart guide for the exact JSON.
 
 That's it. Data lives locally in `~/.memory-core/` by default (override
 with `MEMORY_CORE_DATA_DIR`). A [`Dockerfile`](Dockerfile) is also
 included, for MCP directories/hosts that deploy from a container image
 instead.
+
+**Two more things worth doing right after connecting**: copy
+[`skill/spomory/SKILL.md`](skill/spomory/SKILL.md) into your client's
+skills directory so it actually calls these tools on its own instead of
+sitting there unused; and if you're already using Claude Code, Codex, or
+Cursor, run `spomory-import-sessions --client claude-code` (or
+`codex`/`cursor`) to seed the graph from real session history instead of
+starting from nothing. Both covered in the quickstart guide.
 
 Want the LLM calls local too, instead of a cloud API? Point `LLM_BASE_URL`
 at any local OpenAI-compatible server — vLLM, Ollama, llama.cpp, or MLX

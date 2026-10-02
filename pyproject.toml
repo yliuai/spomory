@@ -1,6 +1,6 @@
 [project]
 name = "memory-core"
-version = "0.2.1"
+version = "0.3.0"
 description = "AI个人记忆产品 — 检索+记忆管理内核"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -50,6 +50,7 @@ dev = [
 memory-core-mcp = "memory_core.mcp_server.__main__:main"
 spomory-mcp = "memory_core.mcp_server.__main__:main"
 memory-core-mcp-remote = "cloud_api.remote_main:main"
+spomory-import-sessions = "memory_core.session_import:main"
 
 [build-system]
 requires = ["hatchling"]

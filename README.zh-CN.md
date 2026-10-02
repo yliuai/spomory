@@ -30,7 +30,8 @@ Codex CLI 等客户端共享、不随会话结束而消失的东西。
 
 前置要求：Python 3.11+。
 
-**第一步：安装**
+**第一步：安装。** 或者直接跳过这步——第三步的配置里 `command` 可以直接
+写 `uvx`，按需下载运行，不用提前装任何东西：
 
 ```bash
 pip install "spomory[llm,embedding,mcp]"
@@ -59,11 +60,19 @@ Desktop、Cursor、Codex CLI、豆包 各自成节，STDIO/HTTP/OAuth 归在各�
 
 > 最容易踩坑的一点：配置文件里要填 `spomory-mcp` 的**绝对路径**（用
 > `which spomory-mcp` 查）,不能只填命令名——客户端启动它时不一定带着你
-> shell 里的 `PATH`。
+> shell 里的 `PATH`。这个坑(连同第一步的安装)用 `uvx` 当 `command` 就
+> 完全不存在了，具体 JSON 见快速开始文档。
 
 配置完就好了。数据默认存在本地 `~/.memory-core/`（可用
 `MEMORY_CORE_DATA_DIR` 环境变量改路径）。仓库里也带了一份
 [`Dockerfile`](Dockerfile)，给那些从容器镜像部署的 MCP 目录/托管平台用。
+
+**接上之后还值得做两件事**：把 [`skill/spomory/SKILL.md`](skill/spomory/SKILL.md)
+复制进你客户端的技能目录，让它真的会主动用这些工具，而不是装了却没人调；
+如果本来就在用 Claude Code、Codex 或 Cursor，跑一下
+`spomory-import-sessions --client claude-code`(或 `codex`/`cursor`)，
+用真实的历史会话把记忆图谱填起来，不用从零开始一句一句教。两者都在快速
+开始文档里有完整说明。
 
 想让 LLM 调用也走本地、不出网？把 `LLM_BASE_URL` 指向任意本地跑的
 OpenAI 兼容 server 就行——vLLM、Ollama、llama.cpp、MLX 都可以；再设置

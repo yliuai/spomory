@@ -39,8 +39,24 @@ Codex CLI / 豆包 里显示的名字是 **Spomory**（`src/memory_core/mcp_serv
 
 ### 安装
 
+**最省事的方式：完全不用提前安装**，用 `uvx`（[uv](https://docs.astral.sh/uv/) 自带的
+一次性运行工具）在客户端配置里直接指向这条命令，连不上环境都不用手动建：
+
 ```bash
-# 最简单：直接装发布到 PyPI 的包，不用克隆仓库
+uvx --from 'spomory[llm,embedding,mcp]' spomory-mcp
+```
+
+第一次跑会下载依赖（实测几十秒，之后 `uv` 会缓存，后续启动快很多），不需要
+`pip install`、不需要自己建虚拟环境——下面"接入各客户端"那几节的 JSON/TOML
+配置里，`command` 直接写这整条 `uvx ...` 命令就行（把它当成一条可执行命令，
+而不是一个文件路径）。这个方式还顺带绕开了下面那个 macOS 权限坑，因为
+`uv` 的缓存目录天然就不在 `~/Documents` 下。
+
+**如果更想要一个固定、可控的本地安装**（比如想锁定版本、或者在没有网络的
+环境里跑），也可以传统方式装：
+
+```bash
+# 直接装发布到 PyPI 的包，不用克隆仓库
 pip install "spomory[llm,embedding,mcp]"
 
 # 或者，基于源码本地开发：
@@ -132,7 +148,9 @@ memory-core-mcp
 
 这一条对**任何**走 STDIO 方式在本机拉起 Spomory 子进程的客户端都适用
 （Claude Desktop、Cursor、Codex CLI、豆包 STDIO 模式……），下面各客户端
-的 STDIO 小节都会引用这里。
+的 STDIO 小节都会引用这里。**如果用的是上面"安装"一节里的 `uvx` 方式，
+这个坑天然就不存在**——`uv` 的缓存目录不在 `~/Documents` 下，不需要专门
+挪地方；这一节主要是给手动建 venv 的人看的。
 
 **真实踩过的坑**：如果 `command` 指向 `~/Documents/<project>/.venv/...`，
 客户端启动 MCP Server 子进程时会报 `Server disconnected`，日志里能看到：
@@ -184,6 +202,44 @@ Documents/Desktop/Downloads 下的普通目录，同样是为了避开上面那�
 会先备份成 `memory_core.sqlite3.pre-encryption-backup`（迁移后不会自动
 删除，确认新数据库没问题后可以自己删掉）——不会丢数据，也不需要手动做
 任何操作。
+
+### 让 AI 主动用记忆（SKILL.md）
+
+六个工具本身是纯被动的——没有任何机制让 AI 自己想起来去调用它们，装了
+不代表真的会被用上。仓库里 [`skill/spomory/SKILL.md`](../skill/spomory/SKILL.md)
+是一份可以直接复制进客户端技能目录的指令文件，教 AI 两件事：**任务开始先
+调 `search_memory` 查一下**（不要凭空假设自己不知道），**聊出新的、以后
+还用得上的事实就主动调 `add_memory` 存下来**（不是只有被明确要求才存）。
+新账号第一次用、`search_memory` 查什么都没有的时候，这份技能还会引导 AI
+主动问几句"你平时做什么工作""希望我怎么跟你沟通"这类问题，边问边存，
+解决"刚连上记忆图谱是空的，没有第一眼价值感"这个问题——不需要单独再装
+一套引导流程。
+
+装法因客户端而异：Claude Code 放到 `.claude/skills/spomory/`，Cursor 放
+`.cursor/skills/spomory/`，其他支持 `SKILL.md` 这套开放格式的客户端
+同理——把整个 `spomory` 文件夹复制过去就行。
+
+### 导入已有的本地会话（冷启动）
+
+新账号最大的问题是空的——没有东西可查，第一印象就打了折扣。如果本来就在用
+Claude Code、Codex、或者 Cursor，仓库自带一个命令行工具，把这些工具自己
+存的历史会话读出来，走一遍和 `add_memory` 完全一样的抽取流程，直接把真实
+历史变成初始记忆，不用一句一句手动教：
+
+```bash
+spomory-import-sessions --client claude-code   # 或 codex / cursor
+```
+
+默认只导入最近 20 个会话（`--limit` 可以改），按最后修改时间从新到旧排。
+读的是这几个客户端自己的本地会话文件（Claude Code 的 `~/.claude/projects/`、
+Codex 的 `~/.codex/sessions/`、Cursor 的 `~/.cursor/projects/.../agent-
+transcripts/`），每个会话当成一次 `add_memory` 调用，`source_id` 是会话
+文件路径，方便回头查某条记忆具体来自哪次对话。
+
+**这个命令会真的读你本地的对话内容、发给配置好的 LLM 做抽取、写进本地的
+记忆库**——不是无副作用的只读命令，跑之前确认一下这是你想要的。目前只做了
+单元测试（用跟真实文件格式完全一致的合成样例验证解析逻辑），没有在真实
+会话数据上跑过完整的真实 LLM 调用流程。
 
 ### 部署远程/云端 Server（给 HTTP 接入用）
 
@@ -482,10 +538,30 @@ _configured_origin_and_rejects_others`）。测试过程中发现两个测试设
 `~/Library/Application Support/Claude/claude_desktop_config.json`）里加
 一段。`mcpServers` 下面这个键（下例中的 `"Spomory"`）就是 Claude
 Desktop 界面上显示的名字，可以按自己喜好改，但**改了之后要连带把下面
-"验证步骤与排查方法"里提到的日志文件名一起换**，两者是绑定的。`command`
-写上面那个**非 Documents 路径**虚拟环境里 `memory-core-mcp` 的绝对路径
-——注意这个可执行文件名不用跟着显示名字改，它是包安装时固定生成的入口
-——Claude Desktop 启动子进程时也不一定继承你终端的 `PATH`，绝对路径最不
+"验证步骤与排查方法"里提到的日志文件名一起换**，两者是绑定的。
+
+**推荐：用 `uvx`，不用提前装任何东西**（见上面通用章节"安装"）：
+
+```json
+{
+  "mcpServers": {
+    "Spomory": {
+      "command": "uvx",
+      "args": ["--from", "spomory[llm,embedding,mcp]", "spomory-mcp"],
+      "env": {
+        "LLM_API_KEY": "...",
+        "LLM_BASE_URL": "https://api.deepseek.com",
+        "LLM_MODEL": "deepseek-v4-flash"
+      }
+    }
+  }
+}
+```
+
+**或者，固定安装到一个虚拟环境里**（想锁版本、或者不方便联网现下载的话）：
+`command` 写**非 Documents 路径**虚拟环境里 `memory-core-mcp` 的绝对路径
+——这个可执行文件名不用跟着显示名字改，它是包安装时固定生成的入口——
+Claude Desktop 启动子进程时也不一定继承你终端的 `PATH`，绝对路径最不
 容易出问题：
 
 ```json
@@ -612,6 +688,19 @@ LLM_BASE_URL = "https://api.deepseek.com"
 LLM_MODEL = "deepseek-v4-flash"
 ```
 
+**不想提前装环境的话，换成 `uvx`**（见通用章节"安装"）：
+
+```toml
+[mcp_servers.Spomory]
+command = "uvx"
+args = ["--from", "spomory[llm,embedding,mcp]", "spomory-mcp"]
+
+[mcp_servers.Spomory.env]
+LLM_API_KEY = "你的 LLM API Key"
+LLM_BASE_URL = "https://api.deepseek.com"
+LLM_MODEL = "deepseek-v4-flash"
+```
+
 也可以用官方 CLI 命令添加，不用手动改文件：
 
 ```bash
@@ -670,13 +759,17 @@ codex mcp add Spomory \
 先看上面通用章节的
 [macOS 权限坑](#macos-上的一个坑不要把本地运行时装在-documents-下)。
 
+**推荐：用 `uvx`，不用提前装环境**（见通用章节"安装"）：
+
 - **服务器名称**：随便起，比如 `Spomory`
 - **传输类型**：**STDIO**
-- **命令**：`spomory-mcp` 的绝对路径（和前面 Claude Desktop 配置里的
-  `command` 是同一个值，用 `which spomory-mcp` 查）
-- **参数**：留空
+- **命令**：`uvx`
+- **参数**：加两行，`--from spomory[llm,embedding,mcp]`、`spomory-mcp`
 - **环境变量**：加几行 `LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`——值
   和本文档前面的配置 JSON 示例一样
+
+**或者固定安装到虚拟环境**：命令填 `spomory-mcp` 的绝对路径（和前面 Claude
+Desktop 配置里的 `command` 是同一个值，用 `which spomory-mcp` 查），参数留空。
 
 ### HTTP（远程/云端，API Key）
 

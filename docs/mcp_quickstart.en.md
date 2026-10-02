@@ -46,8 +46,27 @@ down only covers how that specific client's config UI/file is filled in.
 
 ### Install
 
+**The least setup: nothing to install ahead of time.** `uvx` (bundled
+with [uv](https://docs.astral.sh/uv/)) runs a package on demand — point a
+client's config straight at this command instead of pre-installing anything:
+
 ```bash
-# simplest — the published package, nothing to clone
+uvx --from 'spomory[llm,embedding,mcp]' spomory-mcp
+```
+
+The first run downloads dependencies (tens of seconds in practice; `uv`
+caches them, so later startups are much faster) — no `pip install`, no
+virtual environment to set up by hand. In the JSON/TOML configs further
+down, `command` is this whole `uvx ...` invocation (treat it as a command
+to run, not a file path). This also sidesteps the macOS gotcha below
+entirely, since `uv`'s cache directory was never under `~/Documents` to
+begin with.
+
+**For a fixed, pinned local install instead** (want to lock a version, or
+running somewhere without network access to fetch on demand):
+
+```bash
+# the published package, nothing to clone
 pip install "spomory[llm,embedding,mcp]"
 
 # from source, for local development:
@@ -149,7 +168,11 @@ memory-core-mcp
 
 This applies to **any** client connecting over STDIO by spawning Spomory
 as a local subprocess (Claude Desktop, Cursor, Codex CLI, Doubao's STDIO
-mode, ...) — each client section below links back to it.
+mode, ...) — each client section below links back to it. **This gotcha
+doesn't exist at all if you're using `uvx`** from "Install" above — `uv`'s
+cache directory was never under `~/Documents`, so there's nothing to
+relocate. This section is mainly for anyone installing into their own
+virtual environment by hand.
 
 **A real gotcha we actually hit**: if `command` points at
 `~/Documents/<project>/.venv/...`, the client's MCP Server subprocess
@@ -210,6 +233,57 @@ and migrates it in place automatically — the original file is backed up
 to `memory_core.sqlite3.pre-encryption-backup` first (not deleted
 automatically; safe to remove once you've confirmed the new database
 looks right). No data loss, no manual steps required.
+
+### Getting the AI to use memory proactively (SKILL.md)
+
+The six tools are purely reactive on their own — nothing makes an AI
+think to call them, so being installed doesn't mean they're actually
+getting used. [`skill/spomory/SKILL.md`](../skill/spomory/SKILL.md) in
+the repo is an instruction file you can copy straight into a client's
+skills directory, teaching the AI two things: **recall first** — call
+`search_memory` at the start of a task instead of assuming it doesn't
+know something — and **store last** — call `add_memory` on its own when
+something durable and reusable comes up, not only when explicitly told
+to. The first time an account is used and `search_memory` comes back
+empty, this skill also has the AI ask a few lightweight "what do you
+work on" / "how should I communicate with you" questions and save the
+answers — solving the "just connected, graph is empty, no first-glance
+value" problem without a separate onboarding mechanism.
+
+Where it goes depends on the client: Claude Code reads
+`.claude/skills/spomory/`, Cursor reads `.cursor/skills/spomory/`, and
+any other client supporting the open `SKILL.md` format follows the same
+pattern — copy the whole `spomory` folder over.
+
+### Importing existing local sessions (fixing the cold start)
+
+A brand-new account's biggest problem is that it's empty — nothing to
+recall, so the first impression undersells it. If you're already using
+Claude Code, Codex, or Cursor, the repo ships a CLI tool that reads those
+clients' own local session history and runs it through the exact same
+extraction pipeline `add_memory` uses, turning real history into a real
+starting memory graph instead of teaching it one sentence at a time:
+
+```bash
+spomory-import-sessions --client claude-code   # or codex / cursor
+```
+
+Imports the 20 most recently modified sessions by default (`--limit`
+changes that). It reads each client's own local session files (Claude
+Code's `~/.claude/projects/`, Codex's `~/.codex/sessions/`, Cursor's
+`~/.cursor/projects/.../agent-transcripts/`), treats each session as one
+`add_memory`-equivalent call, and sets `source_id` to the session file's
+path so a memory's provenance points back to exactly which conversation
+it came from.
+
+**This command genuinely reads your local conversation content, sends it
+to whatever LLM you've configured for extraction, and writes to your
+local memory store** — not a read-only, side-effect-free command, so
+make sure that's actually what you want before running it. Coverage so
+far is unit tests against synthetic fixtures shaped exactly like the real
+file formats (confirmed against real local session files on a real
+machine before writing the parsers) — it hasn't been run through a real
+LLM call against real session data yet.
 
 ### Deploying the remote/cloud server (for the HTTP path)
 
@@ -564,13 +638,34 @@ Add a block to `claude_desktop_config.json` (macOS path:
 key under `mcpServers` (`"Spomory"` in the example below) is what shows
 up in the Claude Desktop UI — feel free to rename it to your liking, but
 **if you do, also update the log filename referenced in "Verification
-steps and troubleshooting" below**, since the two are tied together. Set
-`command` to the absolute path of `memory-core-mcp` inside that
-**non-Documents** virtual environment — note that the executable's name
-doesn't need to match the display name; it's a fixed entry point
-generated when the package is installed. Claude Desktop's subprocess
-doesn't necessarily inherit your terminal's `PATH`, so an absolute path
-is the safest bet:
+steps and troubleshooting" below**, since the two are tied together.
+
+**Recommended: `uvx`, nothing to pre-install** (see "Install" in the
+common section above):
+
+```json
+{
+  "mcpServers": {
+    "Spomory": {
+      "command": "uvx",
+      "args": ["--from", "spomory[llm,embedding,mcp]", "spomory-mcp"],
+      "env": {
+        "LLM_API_KEY": "...",
+        "LLM_BASE_URL": "https://api.deepseek.com",
+        "LLM_MODEL": "deepseek-v4-flash"
+      }
+    }
+  }
+}
+```
+
+**Or, a fixed install into a virtual environment** (to pin a version, or
+if you'd rather not fetch on demand): set `command` to the absolute path
+of `memory-core-mcp` inside that **non-Documents** virtual environment —
+the executable's name doesn't need to match the display name; it's a
+fixed entry point generated when the package is installed. Claude
+Desktop's subprocess doesn't necessarily inherit your terminal's `PATH`,
+so an absolute path is the safest bet:
 
 ```json
 {
@@ -711,6 +806,20 @@ LLM_BASE_URL = "https://api.deepseek.com"
 LLM_MODEL = "deepseek-v4-flash"
 ```
 
+**Don't want to pre-install anything? Swap in `uvx`** (see "Install" in
+the common section above):
+
+```toml
+[mcp_servers.Spomory]
+command = "uvx"
+args = ["--from", "spomory[llm,embedding,mcp]", "spomory-mcp"]
+
+[mcp_servers.Spomory.env]
+LLM_API_KEY = "your LLM API key"
+LLM_BASE_URL = "https://api.deepseek.com"
+LLM_MODEL = "deepseek-v4-flash"
+```
+
 Or add it with the official CLI command instead of editing the file by hand:
 
 ```bash
@@ -776,15 +885,20 @@ See the
 [macOS gotcha](#a-macos-gotcha-dont-install-the-local-runtime-under-documents)
 above first.
 
+**Recommended: `uvx`, nothing to pre-install** (see "Install" in the
+common section above):
+
 - **服务器名称** (server name): anything, e.g. `Spomory`
 - **传输类型** (transport type): **STDIO**
-- **命令** (command): the absolute path to `spomory-mcp` (same value as
-  `command` in the Claude Desktop config above — run `which spomory-mcp`
-  to find it)
-- **参数** (arguments): leave empty
+- **命令** (command): `uvx`
+- **参数** (arguments): two rows, `--from spomory[llm,embedding,mcp]` and `spomory-mcp`
 - **环境变量** (environment variables): add rows for `LLM_API_KEY`,
   `LLM_BASE_URL`, `LLM_MODEL` — same values as the config JSON example
   earlier in this doc
+
+**Or, a fixed virtual-environment install**: 命令 is the absolute path to
+`spomory-mcp` (same value as `command` in the Claude Desktop config above
+— run `which spomory-mcp` to find it), 参数 left empty.
 
 ### HTTP (remote/cloud, API key)
 
