@@ -355,8 +355,24 @@ def create_app(
             allow_headers=["content-type", "x-api-key"],
         )
 
-    def require_api_key(x_api_key: str = Header(...)) -> AuthenticatedUser:
-        user = store.authenticate(x_api_key)
+    def require_api_key(
+        x_api_key: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+    ) -> AuthenticatedUser:
+        """Accepts the key as either `x-api-key` (the original scheme, every
+        other client in these docs uses it) or `Authorization: Bearer <key>`
+        -- the latter exists specifically so ChatGPT's Custom GPT Actions
+        editor's standard "API Key" auth type (Bearer only, no custom
+        header name in the UI) works against this REST surface without any
+        special-casing needed on the GPT builder's side."""
+        api_key = x_api_key
+        if not api_key and authorization and authorization.lower().startswith("bearer "):
+            api_key = authorization[len("bearer ") :]
+        if not api_key:
+            raise HTTPException(
+                status_code=401, detail="missing API key (x-api-key header or Authorization: Bearer)"
+            )
+        user = store.authenticate(api_key)
         if user is None:
             raise HTTPException(status_code=401, detail="invalid or revoked API key")
         return user

@@ -80,7 +80,7 @@ def test_missing_api_key_rejected(method, path, body):
     app, _ = _app()
     client = TestClient(app)
     resp = getattr(client, method)(path, json=body) if method == "post" else client.get(path)
-    assert resp.status_code == 422  # x-api-key is a required header, FastAPI 422s before enforce_quota runs
+    assert resp.status_code == 401
 
 
 @pytest.mark.parametrize(
@@ -104,6 +104,27 @@ def test_wrong_api_key_rejected(method, path, body):
         else client.get(path, headers=headers)
     )
     assert resp.status_code == 401
+
+
+def test_authorization_bearer_header_works_as_an_alternative_to_x_api_key():
+    """Why this exists: ChatGPT's Custom GPT Actions editor's standard "API
+    Key" auth type only offers Bearer, no custom header name -- without this
+    fallback, setting up a Custom GPT against this API would need a
+    workaround on the GPT builder's side. Uses /me (no Postgres needed)
+    rather than a /v1/memories route, since this is specifically testing
+    `require_api_key`, not tool-call behavior."""
+    auth_store = AuthStore(":memory:")
+    key = auth_store.register_user("bearer-test@example.com").raw_key
+    app, _ = _app(auth_store=auth_store, mount_rest=False)
+    client = TestClient(app)
+
+    resp = client.get("/me", headers={"Authorization": f"Bearer {key}"})
+    assert resp.status_code == 200
+    assert resp.json()["user_id"]
+
+    # x-api-key still works unchanged -- this is additive, not a replacement
+    resp = client.get("/me", headers={"x-api-key": key})
+    assert resp.status_code == 200
 
 
 # --- real tool-call behavior, needs a live Postgres ----------------------
