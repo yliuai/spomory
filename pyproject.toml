@@ -1,6 +1,6 @@
 [project]
 name = "memory-core"
-version = "0.3.0"
+version = "0.3.1"
 description = "AI个人记忆产品 — 检索+记忆管理内核"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -45,6 +45,13 @@ dev = [
     "ruff>=0.4",
     "mypy>=1.10",
 ]
+
+[project.urls]
+Homepage = "https://spomory.yliuai.com"
+Documentation = "https://github.com/yliuai/spomory/blob/main/docs/mcp_quickstart.en.md"
+Repository = "https://github.com/yliuai/spomory"
+Issues = "https://github.com/yliuai/spomory/issues"
+Changelog = "https://github.com/yliuai/spomory/releases"
 
 [project.scripts]
 memory-core-mcp = "memory_core.mcp_server.__main__:main"
