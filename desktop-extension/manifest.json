@@ -1,0 +1,77 @@
+{
+  "manifest_version": "0.4",
+  "name": "spomory",
+  "display_name": "Spomory",
+  "version": "0.3.1",
+  "description": "Explainable graph-retrieval memory for Claude — remembers facts about you and recalls them across conversations.",
+  "long_description": "Spomory gives Claude a persistent, explainable memory graph: facts you share get extracted into entities and relations, and retrieved with a ranked, cited explanation of why each one matched -- not a black-box vector similarity score. Runs entirely on your machine against your own LLM API key; nothing is sent to Spomory's servers. The same six tools (add_memory, search_memory, forget_memory, forget_all_memory, get_graph, export_memory) are available locally here and over Spomory's optional cloud sync.",
+  "author": {
+    "name": "yliuai",
+    "url": "https://github.com/yliuai/spomory"
+  },
+  "homepage": "https://spomory.yliuai.com",
+  "documentation": "https://github.com/yliuai/spomory/blob/main/docs/mcp_quickstart.en.md",
+  "support": "https://github.com/yliuai/spomory/issues",
+  "server": {
+    "type": "uv",
+    "entry_point": "src/server.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["run", "--directory", "${__dirname}", "src/server.py"],
+      "env": {
+        "LLM_API_KEY": "${user_config.llm_api_key}",
+        "LLM_BASE_URL": "${user_config.llm_base_url}",
+        "LLM_MODEL": "${user_config.llm_model}",
+        "EMBEDDING_PROVIDER": "openai_compatible",
+        "EMBEDDING_MODEL": "${user_config.embedding_model}"
+      }
+    }
+  },
+  "tools": [
+    { "name": "add_memory", "description": "Extracts durable facts from text and writes them into the memory graph." },
+    { "name": "search_memory", "description": "Retrieves relevant facts via personalized PageRank over the memory graph." },
+    { "name": "forget_memory", "description": "Deletes the single fact that best matches a query." },
+    { "name": "forget_all_memory", "description": "Deletes the entire memory graph (two-step confirm)." },
+    { "name": "get_graph", "description": "Returns the subgraph within N hops of an entity." },
+    { "name": "export_memory", "description": "Exports the full memory graph as a portable JSON document." }
+  ],
+  "keywords": ["memory", "rag", "knowledge-graph", "personal-assistant"],
+  "license": "MIT",
+  "user_config": {
+    "llm_api_key": {
+      "type": "string",
+      "title": "LLM API Key",
+      "description": "API key for an OpenAI-compatible provider (OpenAI, DeepSeek, Qwen, etc.), used for entity/relation extraction.",
+      "sensitive": true,
+      "required": true
+    },
+    "llm_base_url": {
+      "type": "string",
+      "title": "LLM Base URL",
+      "description": "OpenAI-compatible base URL. Leave as-is for OpenAI, or point at another provider (e.g. https://api.deepseek.com).",
+      "default": "https://api.openai.com/v1",
+      "required": false
+    },
+    "llm_model": {
+      "type": "string",
+      "title": "LLM Model",
+      "description": "Model name used for extraction.",
+      "default": "gpt-4o-mini",
+      "required": false
+    },
+    "embedding_model": {
+      "type": "string",
+      "title": "Embedding Model",
+      "description": "Model name used for semantic search, called via the same provider's /v1/embeddings endpoint above. Must match whatever you set LLM Base URL to -- e.g. text-embedding-3-small for OpenAI.",
+      "default": "text-embedding-3-small",
+      "required": false
+    }
+  },
+  "compatibility": {
+    "claude_desktop": ">=1.0.0",
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "python": ">=3.11"
+    }
+  }
+}
